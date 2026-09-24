@@ -977,9 +977,11 @@ function makeLargePinIcon(vendor) {
 function initMarkers() {
   clusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
-    // Cluster more aggressively at low zoom so isolated vendors don't appear
-    // as lone pins on the UK overview. Scales down as you zoom in.
-    maxClusterRadius: zoom => zoom <= 6 ? 150 : zoom <= 8 ? 100 : zoom <= 10 ? 70 : 50,
+    // Cluster aggressively at UK-overview zoom so no lone pins appear,
+    // but shrink to near-zero at regional zoom (10+) so vendors show as
+    // individual pins — closer to Bing/Google than numbered badge clusters.
+    // Only genuinely co-located vendors (same market address) group at zoom 10+.
+    maxClusterRadius: zoom => zoom <= 6 ? 150 : zoom <= 8 ? 100 : zoom <= 10 ? 25 : 15,
     showCoverageOnHover: false,
     iconCreateFunction: clusterIcon,
     spiderfyOnMaxZoom: true,
