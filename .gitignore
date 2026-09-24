@@ -1,0 +1,7 @@
+mnt/
+tmp/
+.cache/
+.npm/
+.bash_logout
+.bashrc
+.profile

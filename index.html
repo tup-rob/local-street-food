@@ -923,7 +923,13 @@ const LocateCtl = L.Control.extend({
 new LocateCtl().addTo(map);
 
 map.on("locationfound", e => {
+  // Locate button was clicked — show beacon and save position
   showUserBeacon(e.latlng);
+  try {
+    sessionStorage.setItem('lsf_pos', JSON.stringify({
+      lat: e.latlng.lat, lng: e.latlng.lng, zoom: map.getZoom()
+    }));
+  } catch {}
   fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}`)
     .then(r => r.json())
     .then(d => {
@@ -971,7 +977,9 @@ function makeLargePinIcon(vendor) {
 function initMarkers() {
   clusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
-    maxClusterRadius: 60,
+    // Cluster more aggressively at low zoom so isolated vendors don't appear
+    // as lone pins on the UK overview. Scales down as you zoom in.
+    maxClusterRadius: zoom => zoom <= 6 ? 150 : zoom <= 8 ? 100 : zoom <= 10 ? 70 : 50,
     showCoverageOnHover: false,
     iconCreateFunction: clusterIcon,
     spiderfyOnMaxZoom: true,
@@ -1346,16 +1354,15 @@ map.on("zoomstart dragstart", () => {
 });
 
 // ════════════════════════
-//  GEOLOCATION — three-layer approach
-//  1. sessionStorage  → instant, no flicker on return visits
-//  2. IP geolocation  → city-level, no permission prompt (first visit)
-//  3. Browser GPS     → precise, may prompt (upgrades whichever came first)
+//  GEOLOCATION
+//  On load:   sessionStorage (instant) → IP geo (city-level, no prompt, no beacon)
+//  On button: Leaflet map.locate() → precise GPS, beacon shown (user-initiated)
+//  No automatic GPS prompt — matches Bing; avoids iOS Safari silent-deny.
 // ════════════════════════
 
-// Save position on pan/zoom so next visit opens exactly here.
-// Only save once the user has zoomed into a meaningful area (not the UK overview).
+// Save position on manual pan/zoom so next visit opens exactly here.
 map.on('moveend zoomend', () => {
-  if (map.getZoom() < 8) return;
+  if (map.getZoom() < 8) return; // don't save the UK overview
   try {
     const c = map.getCenter();
     sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
@@ -1365,9 +1372,10 @@ map.on('moveend zoomend', () => {
 // Target zoom — shows roughly a 50km radius (Oxford→Swindon→Reading scale)
 const GEO_ZOOM = 10;
 
-// IP-based geolocation — city level, no prompt needed, used on first visit only
+// IP-based geolocation — city-level, no permission prompt, first-visit only.
+// Centres the map silently; no beacon shown.
 async function tryIPGeolocation() {
-  if (_savedPos) return; // already positioned
+  if (_savedPos) return; // sessionStorage already positioned the map
   try {
     const r = await fetch('https://ipapi.co/json/', { cache: 'no-store' });
     if (!r.ok) return;
@@ -1376,29 +1384,6 @@ async function tryIPGeolocation() {
       map.setView([d.latitude, d.longitude], GEO_ZOOM, { animate: false });
     }
   } catch {}
-}
-
-// Precise GPS — upgrades the map position silently if already positioned, or flies there
-function tryGPSGeolocation() {
-  if (!navigator.geolocation) return;
-  const alreadyPositioned = _savedPos || map.getZoom() > 8;
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const ll = [pos.coords.latitude, pos.coords.longitude];
-      try {
-        sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: ll[0], lng: ll[1], zoom: GEO_ZOOM }));
-      } catch {}
-      // Animate only if we weren't already at a reasonable position
-      if (alreadyPositioned) {
-        map.setView(ll, Math.max(map.getZoom(), GEO_ZOOM), { animate: true, duration: 1 });
-      } else {
-        map.setView(ll, GEO_ZOOM, { animate: true });
-      }
-      showUserBeacon(ll);
-    },
-    () => { /* denied — keep wherever we are */ },
-    { timeout: 10000, maximumAge: 300000 }
-  );
 }
 
 // ════════════════════════
@@ -1423,10 +1408,9 @@ async function loadVendors() {
   updateSheetHeight();
 }
 
-// Launch geolocation immediately and in parallel with data fetch
-tryIPGeolocation();  // no prompt, city-level
-tryGPSGeolocation(); // may prompt, precise
-loadVendors();       // fetch data concurrently
+// IP geo and data fetch run in parallel; GPS only fires on locate button click
+tryIPGeolocation();
+loadVendors();
 
 </script>
 </body>
