@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>local street food — find street food near you</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -297,30 +299,14 @@
       border-radius: 4px; border: 1px solid #ddd;
       background: #f7f7f7; color: #555;
     }
-
-    /* Schedule rows in sheet */
-    #sheet-sched { margin-bottom: 18px; }
-    .sh-sr {
-      display: grid;
-      grid-template-columns: 100px 1fr;
-      gap: 3px 10px; font-size: 13px;
-      padding: 7px 0;
-      align-items: baseline;
+    #sheet-dietary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    #sheet-sched { margin-bottom: 18px; font-size: 13px; color: #bbb; }
+    .ig-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; color: #555; text-decoration: none;
+      padding: 6px 0; margin-top: 4px;
     }
-    .sh-day, .sh-info { font-weight: 400; color: #555; }
-    .sh-sr.today .sh-day, .sh-sr.today .sh-info { font-weight: 400; color: #111; }
-    /* Schedule accordion */
-    #sched-expanded {
-      overflow: hidden; max-height: 0;
-      transition: max-height 0.3s ease;
-    }
-    #sched-toggle {
-      background: none; border: none; padding: 0; cursor: pointer;
-      font-size: 14px; color: #555; font-family: inherit;
-      display: inline-flex; align-items: center; gap: 3px;
-    }
-    #sched-toggle svg { transition: transform 0.25s ease; flex-shrink: 0; }
-    #sched-toggle.open svg { transform: rotate(180deg); }
+    .ig-link:hover { color: #111; }
 
     /* ── MAP ── */
     #map-wrap { flex: 1; position: relative; min-width: 0; }
@@ -405,8 +391,6 @@
       flex-shrink: 0;
     }
     .pop-icon-link:hover { background: #f5f5f5; border-color: #bbb; color: #111; }
-    /* ── Bottom sheet hidden for now ── */
-    #vendor-sheet, #sheet-overlay { display: none !important; }
     .pin-label {
       position: absolute; left: 26px; top: 5px; white-space: nowrap; cursor: pointer;
       font-size: 13px; font-weight: 400; color: #222; letter-spacing: -0.1px;
@@ -420,6 +404,32 @@
       transition: opacity 0.2s ease;
     }
     .pin-label.lbl-hidden { opacity: 0; pointer-events: none; }
+
+    /* ── LOADING OVERLAY ── */
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 2000;
+      background: #fff; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      transition: opacity 0.3s ease;
+    }
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner {
+      width: 28px; height: 28px;
+      border: 2.5px solid #eee; border-top-color: #111;
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 13px; color: #aaa; }
+
+    /* ── MARKER CLUSTER ── */
+    .lsf-cluster {
+      width: 36px; height: 36px; background: #111; color: #fff;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      border: 2.5px solid #fff;
+    }
+    .lsf-cluster.big { width: 44px; height: 44px; font-size: 13px; }
 
     /* ── LEAFLET ── */
     .leaflet-control-zoom { border: none !important; }
@@ -440,12 +450,19 @@
       justify-content: center !important; cursor: pointer !important;
     }
     .locate-btn:hover { background: #f5f5f5 !important; }
-
-    /* Demo size picker */
+    /* Override default markercluster styles */
+    .leaflet-cluster-anim .leaflet-marker-icon,
+    .leaflet-cluster-anim .leaflet-marker-shadow { transition: transform 0.3s ease-out, opacity 0.3s ease-in; }
 
   </style>
 </head>
 <body>
+
+<!-- ══ LOADING OVERLAY ══ -->
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading vendors…</div>
+</div>
 
 <!-- ══ HEADER ══ -->
 <div id="header">
@@ -470,7 +487,7 @@
         <circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/>
       </svg>
       <input id="search-input" type="text"
-             placeholder="Search traders, cuisines, areas…"
+             placeholder="Search vendors, cuisines, areas…"
              autocomplete="off" role="combobox"
              aria-expanded="false" aria-haspopup="listbox"/>
     </div>
@@ -497,9 +514,6 @@
   <!-- ══ MAP (fills full #main area) ══ -->
   <div id="map-wrap">
     <div id="map"></div>
-
-
-    <!-- Demo: card size picker -->
 
     <!-- Name tooltip — reserved for mobile/touch use -->
     <div id="pin-tooltip"></div>
@@ -547,6 +561,7 @@
         <div id="sheet-location"></div>
         <div id="sheet-status" class="vi-status"></div>
         <div id="sheet-sched"></div>
+        <div id="sheet-dietary"></div>
         <div id="sheet-desc"></div>
         <div id="sheet-instagram"></div>
       </div>
@@ -566,254 +581,36 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
 // ════════════════════════════════════════════════════════
-//  DATA
+//  DATA — loaded async from vendors.json
 // ════════════════════════════════════════════════════════
-const VENDORS = [
-  {
-    id:1, name:"Son of a Bun", cuisine:"Fried Chicken & Burgers",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/04111234-3d28-4c79-a37a-8754516f416d/6V2rRBI_09/Feast_It_son-of-a-bun-CZ876tWIhI.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/04111234-3d28-4c79-a37a-8754516f416d/6V2rRBI_09/Feast_It_son-of-a-bun-CZ876tWIhI.jpg",
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1594212699903-ec8a3eca50f5?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1571091718767-18b5b1457add?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1553979459-d12b69fa6d48?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1607013251379-e6eecfffe234?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1550547660-25b87bbb4e09?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1587736241-f353f531e573?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1617196034183-421b4040d20d?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Bath", county:"Somerset",
-    schedule:[
-      { location:"Guildhall Market, Bath",  area:"Bath",          days:["Friday","Saturday"], hours:"11:00 - 16:00", lat:51.3811, lng:-2.3590, postcode:"BA1 1LN" },
-      { location:"Wapping Wharf, Bristol",  area:"Wapping Wharf", days:["Sunday"],       hours:"11:00 - 15:00", lat:51.4476, lng:-2.6043, postcode:"BS1 6UD" }
-    ],
-    instagram: null,
-    desc:"Born from a passion for fried chicken with an extensive background in street food, we aim to bring you the crispiest, juiciest, most succulent burgers in the west.",
-    dietary:["gf","halal","vegan","vegetarian"]
-  },
-  {
-    id:2, name:"Dookies Grill", cuisine:"Afro-Caribbean BBQ",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/f38108df-e99b-476b-aed3-3c325956e6e1/BFY0sgALkx/Feast_It_dookies-grill-3AhYZPkLQ-.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/f38108df-e99b-476b-aed3-3c325956e6e1/BFY0sgALkx/Feast_It_dookies-grill-3AhYZPkLQ-.jpg",
-      "https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1544025162-d76538b2a681?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Brockley", county:"Greater London",
-    schedule:[
-      { location:"Brockley Market, SE4",      area:"Brockley",   days:["Saturday"], hours:"10:00 - 14:00", lat:51.4665, lng:-0.0363, postcode:"SE4 1UT" },
-      { location:"Maltby Street Market, SE1", area:"Bermondsey", days:["Sunday"], hours:"09:00 - 15:00",  lat:51.5026, lng:-0.0793, postcode:"SE1 3PA" }
-    ],
-    instagram: null,
-    desc:"Specialists in modern and exciting British and Caribbean dishes. Flame-grilled food and memorable catering experiences for more than 7 years.",
-    dietary:["gf","halal","vegan","vegetarian"]
-  },
-  {
-    id:3, name:"AROMA Grill", cuisine:"Brazilian Steak & Chips",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/1bf9ff69-1177-4a23-8000-051ebf6ee18e/nP-PzNo-Ca/Feast_It_aroma-brazilian-food-3QRzH_f0XV.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/1bf9ff69-1177-4a23-8000-051ebf6ee18e/nP-PzNo-Ca/Feast_It_aroma-brazilian-food-3QRzH_f0XV.jpg",
-      "https://images.unsplash.com/photo-1600891964092-4316c288032e?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1546833999-55a55ef2db37?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1432139555-ea57c69b8a4a?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Shoreditch", county:"Greater London",
-    schedule:[
-      { location:"Dinerama, Shoreditch",    area:"Shoreditch",   days:["Thursday","Friday","Saturday"], hours:"12:00 - 23:00", lat:51.5246, lng:-0.0776, postcode:"EC2A 3JL" },
-      { location:"Spitalfields Market, E1", area:"Spitalfields", days:["Wednesday"],             hours:"11:00 - 16:00",  lat:51.5196, lng:-0.0761, postcode:"E1 6EW" }
-    ],
-    instagram: null,
-    desc:"AROMA specialises in PICANHA steak — a South American cut more tender and juicy than sirloin, using only locally sourced meat. Cooked to order right in front of you.",
-    dietary:["gf","vegetarian"]
-  },
-  {
-    id:4, name:"Queen of the Crepes", cuisine:"Sweet & Savoury Crepes",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/9add8b0f-0068-4b93-a96a-84e4a711e550/0KZur8rpLU/Feast_It_queen-of-the-crepes-A5NWlLl9JL.jpeg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/9add8b0f-0068-4b93-a96a-84e4a711e550/0KZur8rpLU/Feast_It_queen-of-the-crepes-A5NWlLl9JL.jpeg",
-      "https://images.unsplash.com/photo-1519676867240-f03562e64548?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1528207776546-365bb710ee93?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1470124182917-cc6e71b22ecc?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Bermondsey", county:"Greater London",
-    schedule:[
-      { location:"Maltby Street Market, SE1", area:"Bermondsey",    days:["Saturday"], hours:"09:00 - 16:00", lat:51.5026, lng:-0.0793, postcode:"SE1 3PA" },
-      { location:"Columbia Road Market, E2",  area:"Bethnal Green", days:["Sunday"], hours:"09:00 - 15:00", lat:51.5276, lng:-0.0714, postcode:"E2 7RG" }
-    ],
-    instagram: null,
-    desc:"Sweet and savoury crepes tailored to gluten-free and vegan preferences, served with teas and coffees from their vibrant catering trailer.",
-    dietary:["gf","vegan","vegetarian"]
-  },
-  {
-    id:5, name:"Basement 17", cuisine:"Mexican Fire Cooking",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/e962dae4-77d2-443e-923f-c8db11948d73/YmXJXJvkIf/Feast_It_basement-17-yNr3-V8KcF.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/e962dae4-77d2-443e-923f-c8db11948d73/YmXJXJvkIf/Feast_It_basement-17-yNr3-V8KcF.jpg",
-      "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1599974579688-8dbdd335c77f?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1570461226-ba3a85abc5bc?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1626700051-4f97bab08c4d?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Bristol City Centre", county:"Bristol",
-    schedule:[
-      { location:"St Nicholas Market, Bristol", area:"Bristol City Centre", days:["Wednesday","Thursday"], hours:"11:00 - 15:00", lat:51.4541, lng:-2.5940, postcode:"BS1 1JQ" },
-      { location:"Wapping Wharf, Bristol",      area:"Wapping Wharf",       days:["Friday","Saturday"], hours:"11:00 - 17:00", lat:51.4476, lng:-2.6043, postcode:"BS1 6UD" }
-    ],
-    instagram: null,
-    desc:"Forged in a Bristol basement during lockdown. Started with tacos for the neighbours every Wednesday and evolved into fire cooking at its finest.",
-    dietary:["gf","vegan","vegetarian"]
-  },
-  {
-    id:6, name:"Azahar", cuisine:"Spanish",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/8930c1e0-0285-11e8-b5b4-9de5cf7953c5/SkCb8KdBG/Feast-It-Azahar-Spanish-Food-Hire-Mobile-Catering-Event-Street-Food-Book-Now.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/8930c1e0-0285-11e8-b5b4-9de5cf7953c5/SkCb8KdBG/Feast-It-Azahar-Spanish-Food-Hire-Mobile-Catering-Event-Street-Food-Book-Now.jpg",
-      "https://images.unsplash.com/photo-1515443961218-a51367888e4b?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1533622597524-a1215e26c0a2?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1559410545-0bdcd187e0a6?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Cambridge", county:"Cambridgeshire",
-    schedule:[
-      { location:"Market Square, Cambridge", area:"Cambridge", days:["Wednesday","Thursday","Friday"], hours:"10:00 - 17:00", lat:52.2054, lng:0.1218, postcode:"CB2 3QJ" },
-      { location:"Ely Market, Ely",          area:"Ely",       days:["Saturday"],             hours:"09:00 - 16:00",  lat:52.3989, lng:0.2650, postcode:"CB7 4NP" }
-    ],
-    instagram: null,
-    desc:"An independent Spanish-English family business with 20+ years in food. Bocatas from a beautiful converted Citroën H Van, and proper paella cooked right in front of you.",
-    dietary:["gf","vegetarian"]
-  },
-  {
-    id:7, name:"Cyprus Kitchen", cuisine:"Eastern Mediterranean",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/6ec784ae-77ca-4148-9341-bf78e9561618/66TDHxDcQT/Feast_It_cyprus-kitchen-LS2CGCI2i3.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/6ec784ae-77ca-4148-9341-bf78e9561618/66TDHxDcQT/Feast_It_cyprus-kitchen-LS2CGCI2i3.jpg",
-      "https://images.unsplash.com/photo-1540914124281-342587941389?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1577906096429-f73c2c312435?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Southville", county:"Bristol",
-    schedule:[
-      { location:"St Nicholas Market, Bristol",     area:"Bristol City Centre", days:["Thursday"], hours:"11:00 - 15:00", lat:51.4541, lng:-2.5940, postcode:"BS1 1JQ" },
-      { location:"Tobacco Factory Market, Bristol", area:"Southville",          days:["Sunday"], hours:"10:00 - 14:00", lat:51.4440, lng:-2.6086, postcode:"BS3 1TF" }
-    ],
-    instagram: null,
-    desc:"Inspired by the family gatherings of childhood — sizzle of grilled meats, soft warm breads and crisp salads. Each dish a traditional Cypriot recipe passed down through generations.",
-    dietary:["gf","halal","vegan","vegetarian"]
-  },
-  {
-    id:8, name:"Nanny Bill's Burgers", cuisine:"Burgers",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/c9aa87a7-076d-44d8-87d3-e6959aa71706/nyfTCzVutL/Feast_It_nanny-bills-fsFZ8XW_Jw.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/c9aa87a7-076d-44d8-87d3-e6959aa71706/nyfTCzVutL/Feast_It_nanny-bills-fsFZ8XW_Jw.jpg",
-      "https://images.unsplash.com/photo-1596662951482-0be4199d2d75?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1615361200141-f45040f367be?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Northern Quarter", county:"Greater Manchester",
-    schedule:[
-      { location:"Northern Quarter, Manchester", area:"Northern Quarter", days:["Thursday","Friday"], hours:"11:00 - 17:00", lat:53.4839, lng:-2.2340, postcode:"M4 1HN" },
-      { location:"Altrincham Market",            area:"Altrincham",       days:["Saturday","Sunday"], hours:"10:00 - 16:00", lat:53.3879, lng:-2.3534, postcode:"WA14 1SA" }
-    ],
-    instagram: null,
-    desc:"Named in homage to their Nan and the café she ran in the '70s & '80s. Hand-pressed beef burgers — order the gravy-dipped one immediately.",
-    dietary:["halal","vegan","vegetarian"]
-  },
-  {
-    id:9, name:"Crosstown", cuisine:"Sourdough Doughnuts",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/8283b05a-f4f4-4c55-aaa0-da4b7a96391c/euax5M1NzL/Feast_It_crosstown-doughnuts-uNw9lOjF4z.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/8283b05a-f4f4-4c55-aaa0-da4b7a96391c/euax5M1NzL/Feast_It_crosstown-doughnuts-uNw9lOjF4z.jpg",
-      "https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1569050467-452914ec7e24?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1528975604-b87e3e5f1fc8?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1608198093-d0d67af8fcdb?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1567620905-42db4fb7b0c7?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1624968756513-47e8b3c0b8f5?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Hackney", county:"Greater London",
-    schedule:[
-      { location:"Borough Market, SE1",  area:"Borough", days:["Wednesday","Thursday"], hours:"10:00 - 17:00", lat:51.5055, lng:-0.0910, postcode:"SE1 9AL" },
-      { location:"Broadway Market, E8",  area:"Hackney", days:["Saturday"],       hours:"09:00 - 17:00",  lat:51.5380, lng:-0.0553, postcode:"E8 4QJ" }
-    ],
-    instagram: null, website:"https://crosstowndoughnuts.com",
-    desc:"An independent London scratch bakery. Housemade jams, glazes, creams and toppings on artisan sourdough doughnuts, plus handcrafted cookies and small-batch ice cream.",
-    dietary:["vegan","vegetarian"]
-  },
-  {
-    id:10, name:"Wanderers Kneaded", cuisine:"Wood-Fired Pizza",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/1dade626-2955-4b20-9104-2f42ccee6cdf/bRjIn_PQJd/Feast_It_wanderers-kneaded-limited-pYvAvPfQTb.jpeg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/1dade626-2955-4b20-9104-2f42ccee6cdf/bRjIn_PQJd/Feast_It_wanderers-kneaded-limited-pYvAvPfQTb.jpeg",
-      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1595854341-2639d42cd578?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1585238342-e5f3ab49b7b2?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1548340748-6d2b7d7da9d5?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Old Town", county:"Edinburgh",
-    schedule:[
-      { location:"Grassmarket, Edinburgh",        area:"Old Town",    days:["Friday","Saturday"], hours:"12:00 - 22:00", lat:55.9468, lng:-3.1918, postcode:"EH1 2JP" },
-      { location:"Stockbridge Market, Edinburgh", area:"Stockbridge", days:["Sunday"],       hours:"10:00 - 17:00",  lat:55.9578, lng:-3.2067, postcode:"EH4 1QS" }
-    ],
-    instagram: null,
-    desc:"Award-winning wood-fired pizza vendor serving Edinburgh. Dough made fresh from scratch — authentic Neapolitan pizzas that'll have everyone coming back for more.",
-    dietary:["vegan","vegetarian"]
-  },
-  {
-    id:11, name:"Oh My Dog!", cuisine:"Hot Dogs",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/19bb4504-027c-4ead-905f-bf97ad2ce2be/WbN6vBBAka/Feast_It_oh-my-dog-eAyehXe-Aa.png",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/19bb4504-027c-4ead-905f-bf97ad2ce2be/WbN6vBBAka/Feast_It_oh-my-dog-eAyehXe-Aa.png",
-      "https://images.unsplash.com/photo-1619740455993-9d8a66d94f7e?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1448043552756-e747b7a2b2b8?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1583745539936-263d70cddd41?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Camden", county:"Greater London",
-    schedule:[
-      { location:"Camden Market, NW1",    area:"Camden",           days:["Wednesday","Thursday","Friday"], hours:"10:00 - 19:00", lat:51.5420, lng:-0.1479, postcode:"NW1 8AF" },
-      { location:"Alexandra Palace, N22", area:"Alexandra Palace", days:["Saturday","Sunday"],       hours:"10:00 - 18:00", lat:51.5945, lng:-0.1288, postcode:"N22 7AY" }
-    ],
-    instagram: null,
-    desc:"'London's hottest dogs!' — Timeout. Dishing up dogs since the early days of the street food boom in 2013.",
-    dietary:["gf","halal","vegan","vegetarian"]
-  },
-  {
-    id:12, name:"The Hogless Roast", cuisine:"Plant-Based",
-    photo:"https://d32nt98g3gjlwu.cloudfront.net/fb325331-1f44-4b4b-8c67-6d8edda6496f/OlPj69u2Lu/Feast_It_the-hogless-roast-0mWJMHipeR.jpg",
-    photos:[
-      "https://d32nt98g3gjlwu.cloudfront.net/fb325331-1f44-4b4b-8c67-6d8edda6496f/OlPj69u2Lu/Feast_It_the-hogless-roast-0mWJMHipeR.jpg",
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1540189549336-e6e99eb4b951?auto=format&w=600&h=450&fit=crop",
-      "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&w=600&h=450&fit=crop"
-    ],
-    area:"Leeds City Centre", county:"West Yorkshire",
-    schedule:[
-      { location:"Kirkgate Market, Leeds", area:"Leeds City Centre", days:["Thursday","Friday"], hours:"11:00 - 17:00", lat:53.7974, lng:-1.5416, postcode:"LS2 7HJ" },
-      { location:"Otley Market",           area:"Otley",             days:["Saturday"],       hours:"09:00 - 16:00",  lat:53.9024, lng:-1.6895, postcode:"LS21 3AA" }
-    ],
-    instagram: null,
-    desc:"Winners of Best Vegan Menu at the British Takeaway Awards. Life-changing 100% plant-based burgers and hog roast — convincing even the most dedicated carnivore.",
-    dietary:["gf","halal","vegan","vegetarian"]
-  }
-];
+let VENDORS = [];
+let clusterGroup = null;
+
+// Cuisine sysName → human label
+const CUISINE_LABEL = {
+  bbq:'BBQ', caterers:'Caterers', canapes:'Canapés',
+  desserts_and_treats:'Desserts & Treats', drop_off:'Drop-off Catering',
+  office_catering:'Office Catering', private_chef:'Private Chef',
+  sit_down_catering:'Sit-down Catering', street_food:'Street Food',
+  buffet:'Buffet', mobile_bar:'Mobile Bar', cocktails:'Cocktails',
+  coffee_hot_drinks:'Coffee & Hot Drinks', drinks_reception:'Drinks Reception',
+  full_bar_service:'Full Bar Service', juices_and_smoothies:'Juices & Smoothies',
+  live_music:'Live Music', christmas_party:'Christmas Party',
+  conference:'Conference', virtual:'Virtual',
+  marquees_tipis:'Marquees & Tipis', florists:'Florists',
+};
+
+function cuisineLabel(arr) {
+  if (!arr || !arr.length) return 'Street Food';
+  return arr.slice(0, 2).map(s => CUISINE_LABEL[s] || s.replace(/_/g, ' ')).join(' · ');
+}
 
 // ════════════════════════
 //  STATE
 // ════════════════════════
-const ALL_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-const jsDay    = new Date().getDay();
-const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
-const TODAY    = ALL_DAYS[todayIdx];          // e.g. "Friday" — fixed for the session
 let selectedVendor  = null;
 let markerMap    = {};
 let nearLabel    = null;
@@ -821,12 +618,10 @@ let _progMove    = false;
 let _userMarker  = null;
 let galPhotos   = [];
 let galIdx      = 0;
-let galPage     = 0;  // which group is currently visible (0-based)
+let galPage     = 0;
 
 // ════════════════════════
 //  PHOTO HELPER
-//  If the URL is Cloudinary, auto-apply smart crop (g_auto).
-//  All other hosts pass through unchanged.
 // ════════════════════════
 function photoUrl(url, w=320, h=320) {
   if (!url) return "";
@@ -834,89 +629,6 @@ function photoUrl(url, w=320, h=320) {
     return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
   }
   return url;
-}
-
-// ════════════════════════
-//  TIME HELPERS
-// ════════════════════════
-function parseHr(s) {
-  s = (s || "").trim();
-  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (m24) return parseInt(m24[1]) + parseInt(m24[2]) / 60;
-  const m12 = s.match(/^(\d+)(am|pm)$/i);
-  if (!m12) return null;
-  let h = parseInt(m12[1]);
-  if (m12[2].toLowerCase() === "pm" && h !== 12) h += 12;
-  if (m12[2].toLowerCase() === "am" && h === 12) h = 0;
-  return h;
-}
-
-function parseMins(s) {
-  const h = parseHr((s || "").trim());
-  return h !== null ? Math.round(h * 60) : null;
-}
-
-function getDayLabel(day) {
-  const diff = ((ALL_DAYS.indexOf(day) - ALL_DAYS.indexOf(TODAY)) + 7) % 7;
-  if (diff === 1) return "Tomorrow";
-  return day;
-}
-
-function nextSlot(vendor, fromDay) {
-  const idx = ALL_DAYS.indexOf(fromDay);
-  for (let i = 1; i <= 7; i++) {
-    const d = ALL_DAYS[(idx + i) % 7];
-    const e = vendor.schedule.find(s => s.days.includes(d));
-    if (e) return { day: d, entry: e };
-  }
-  return null;
-}
-
-// ════════════════════════
-//  STATUS ENGINE
-// Returns { state, label, entry }
-// state: "open" | "closing-soon" | "upcoming" | "future" | "none"
-// ════════════════════════
-function getVendorStatus(vendor) {
-  const now     = new Date();
-  const curMins = now.getHours() * 60 + now.getMinutes();
-
-  const todayEntry = vendor.schedule.find(s => s.days.includes(TODAY));
-
-  if (todayEntry) {
-    const parts    = (todayEntry.hours || "").split(" - ");
-    const openMins = parseMins(parts[0]);
-    const closeMins= parseMins(parts[1]);
-
-    if (openMins !== null && closeMins !== null) {
-      if (curMins < openMins) {
-        return { state:"upcoming", label:`<span class="vi-key">Closed</span> · Opens ${parts[0]}`, entry:todayEntry };
-      }
-      if (curMins >= closeMins) {
-        // Done for today — find next slot
-        const next = nextSlot(vendor, TODAY);
-        if (!next) return { state:"none", label:"Closed", entry:null };
-        const dl = getDayLabel(next.day);
-        const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
-        return { state:"future", label:`<span class="vi-key">Closed</span> · Opens ${dlc} ${next.entry.hours.split(" - ")[0]}`, entry:next.entry };
-      }
-      // Currently open
-      const minsLeft = closeMins - curMins;
-      if (minsLeft <= 30) {
-        return { state:"closing-soon", label:`<span class="vi-key">Closes in ${minsLeft} min${minsLeft === 1 ? "" : "s"}</span>`, entry:todayEntry };
-      }
-      return { state:"open", label:`<span class="vi-key">Open</span> · Closes ${parts[1]}`, entry:todayEntry };
-    }
-    // Hours unparseable — treat as open
-    return { state:"open", label:`<span class="vi-key">Open</span>`, entry:todayEntry };
-  }
-
-  // Not operating today — find next slot
-  const next = nextSlot(vendor, TODAY);
-  if (!next) return { state:"none", label:"Closed", entry:null };
-  const dl = getDayLabel(next.day);
-  const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
-  return { state:"future", label:`<span class="vi-key">Closed</span> · Opens ${dlc} ${next.entry.hours.split(" - ")[0]}`, entry:next.entry };
 }
 
 // ════════════════════════
@@ -930,31 +642,32 @@ let _popupLocked = false;
 function showMapPopup(vendor) {
   _popupVendor = vendor;
   const mapEl  = document.getElementById("map");
-  const status = getVendorStatus(vendor);
-  const entry  = status.entry || vendor.schedule[0];
-  if (!entry) return;
-
   const marker = markerMap[vendor.id];
-  const pinLL  = marker ? marker.getLatLng() : [entry.lat, entry.lng];
-  const pt     = map.latLngToContainerPoint(pinLL);
-  const mapW   = mapEl.offsetWidth;
-  const mapH   = mapEl.offsetHeight;
+  if (!marker) return;
+  const pinLL = marker.getLatLng();
+  const pt    = map.latLngToContainerPoint(pinLL);
+  const mapW  = mapEl.offsetWidth;
+  const mapH  = mapEl.offsetHeight;
 
-  // ── Rich popup with photo navigation ──
   const popup = document.getElementById("map-popup");
   _ppPhotos = vendor.photos || (vendor.photo ? [vendor.photo] : []);
   const hasPhoto = _ppPhotos.length > 0;
   popup.classList.toggle("no-photo", !hasPhoto);
   if (hasPhoto) { ppShowPhoto(0); preloadPopupPhotos(_ppPhotos); }
+
   document.getElementById("popup-name").textContent = vendor.name;
-  document.getElementById("popup-cuis").textContent = vendor.cuisine;
+  document.getElementById("popup-cuis").textContent = vendor.tagline || cuisineLabel(vendor.cuisine);
+
   const locEl = document.getElementById("popup-loc");
-  locEl.textContent   = entry.location || "";
-  locEl.style.display = entry.location ? "block" : "none";
+  locEl.textContent   = vendor.city || "";
+  locEl.style.display = vendor.city ? "block" : "none";
+
+  // No schedule status for Togather vendors
   const stEl = document.getElementById("popup-status");
-  stEl.innerHTML  = status.label;
-  stEl.className  = `vi-status ${status.state}`;
-  const igSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>`;
+  stEl.innerHTML = "";
+  stEl.className = "";
+
+  const igSvg  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>`;
   const webSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
   const links = [
     vendor.instagram ? `<a class="pop-icon-link" href="https://instagram.com/${vendor.instagram.replace(/^@/,'')}" target="_blank" rel="noopener" title="Instagram">${igSvg}</a>` : '',
@@ -962,15 +675,13 @@ function showMapPopup(vendor) {
   ].filter(Boolean).join('');
   document.getElementById("popup-links").innerHTML = links;
 
-  // Position above the actual rendered marker (use marker's lat/lng, not entry's,
-  // so jittered overlapping pins position correctly too)
   popup.style.display = "block";
   const popW = popup.offsetWidth;
   const popH = popup.offsetHeight;
 
   let left = pt.x - popW / 2;
-  let top  = pt.y - 39 - popH - 10;        // 39 = pin icon height above anchor
-  if (top < 8) top = pt.y + 14;             // fall below if too near top edge
+  let top  = pt.y - 39 - popH - 10;
+  if (top < 8) top = pt.y + 14;
   left = Math.max(8, Math.min(left, mapW - popW - 8));
   top  = Math.max(8, Math.min(top,  mapH - popH - 8));
 
@@ -996,7 +707,7 @@ function ppShowPhoto(idx) {
   photoEl.querySelector('.pp-next').classList.toggle('pp-visible', multi && idx < _ppPhotos.length - 1);
 }
 
-let _ppNavAt = 0; // timestamp of last nav click — used to block accidental sheet-open
+let _ppNavAt = 0;
 
 function ppStep(dir, e) {
   e.stopPropagation();
@@ -1004,8 +715,6 @@ function ppStep(dir, e) {
   ppShowPhoto(Math.max(0, Math.min(_ppPhotos.length - 1, _ppIdx + dir)));
 }
 
-// Kick off background fetches for photos 2..n so the browser cache is warm
-// by the time the user taps an arrow. Called on first pin hover.
 function preloadPopupPhotos(photos) {
   for (let i = 1; i < photos.length; i++) {
     new Image().src = photoUrl(photos[i], 600, 450);
@@ -1019,7 +728,6 @@ function hideMapPopup() {
   if (_popupVendor) {
     document.getElementById(`pin-${_popupVendor.id}`)?.classList.remove("hov");
   }
-  // Clear selected (enlarged) pin state
   document.querySelectorAll(".fvm-pin.sel").forEach(p => p.classList.remove("sel"));
   _activeCardId = null;
   selectedVendor   = null;
@@ -1035,7 +743,6 @@ function cancelHideMapPopup() {
   clearTimeout(_popupHideTimer);
 }
 
-// Keep popup alive while the mouse is over it
 document.getElementById("map-popup").addEventListener("mouseenter", () => {
   _popupLocked = true;
   cancelHideMapPopup();
@@ -1045,16 +752,11 @@ document.getElementById("map-popup").addEventListener("mouseleave", () => {
   scheduleHideMapPopup();
 });
 
-// Popup click intentionally does nothing — card stays until map click dismisses it.
-
-const _vanZOffset   = {};   // vendor.id → stable random offset (0–149); persists across re-renders
-let   _activeCardId = null; // vendor.id of currently selected pin (drives .sel class)
+let _activeCardId = null;
 
 // ════════════════════════
 //  GALLERY — group-based mosaic strip
 // ════════════════════════
-// Each group shows 5 photos: 1 big (left column, full height) + 4 small (2×2 right side).
-// Groups slide via translateX — ‹ › advances one full group at a time.
 const GAL_PER_PAGE = 5;
 
 const PH_SVG_SM = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
@@ -1071,21 +773,16 @@ function renderGallery() {
   for (let g = 0; g < totalGroups; g++) {
     const s = g * GAL_PER_PAGE;
     html += `<div class="sg-group">`;
-
-    // Big photo — left column, spans both rows
     const main = galPhotos[s];
     html += main
       ? `<div class="sg-ph-big" onclick="openLightbox(${s})" style="background-image:url('${photoUrl(main,800,600)}')"></div>`
       : `<div class="sg-ph-big sg-ph-placeholder">${PH_SVG_LG}</div>`;
-
-    // 4 small photos — fill the remaining 2×2 grid cells
     for (let i = 1; i <= 4; i++) {
       const p = galPhotos[s + i];
       html += p
         ? `<div class="sg-ph-sm" onclick="openLightbox(${s+i})" style="background-image:url('${photoUrl(p,400,300)}')"></div>`
         : `<div class="sg-ph-sm sg-ph-placeholder">${PH_SVG_SM}</div>`;
     }
-
     html += `</div>`;
   }
 
@@ -1143,12 +840,10 @@ function updateLightbox() {
   document.getElementById("lb-next").style.display = galIdx < galPhotos.length - 1 ? "flex" : "none";
 }
 
-// Close lightbox on overlay click (but not on nav buttons)
 document.getElementById("lightbox").addEventListener("click", e => {
   if (e.target.id === "lightbox" || e.target.id === "lb-photo") closeLightbox();
 });
 
-// Keyboard nav for lightbox
 document.addEventListener("keydown", e => {
   if (!document.getElementById("lightbox").classList.contains("open")) return;
   if (e.key === "Escape")     { e.preventDefault(); closeLightbox(); }
@@ -1167,14 +862,12 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
 L.control.zoom({ position:"topright" }).addTo(map);
 
 // ── Sheet height: align ceiling with the bottom of the top zoom button ──
-// Measured after Leaflet has painted (two rAFs to ensure layout is settled).
 function updateSheetHeight() {
   const zoomIn  = document.querySelector('.leaflet-control-zoom-in');
   const sheetEl = document.getElementById('vendor-sheet');
   if (!zoomIn || !sheetEl) return;
   const h = Math.max(300, Math.round(window.innerHeight - zoomIn.getBoundingClientRect().top - 8));
   sheetEl.style.height = h + 'px';
-  // If sheet is already open, re-snap it to the correct transform for the new height
   if (sheetState !== 'hidden') applySheetState(sheetState, false);
 }
 requestAnimationFrame(() => requestAnimationFrame(updateSheetHeight));
@@ -1192,7 +885,7 @@ function showUserBeacon(latlng) {
   _userMarker = L.marker(latlng, { icon, zIndexOffset: 600, interactive: false }).addTo(map);
 }
 
-// Locate button
+// ── Locate button ──
 const LocateCtl = L.Control.extend({
   options: { position:"topright" },
   onAdd() {
@@ -1214,123 +907,99 @@ map.on("locationfound", e => {
     .then(d => {
       const a = d.address || {};
       nearLabel = a.town || a.city || a.village || a.suburb || a.county || "you";
-      renderMarkers();
-    }).catch(() => { nearLabel = "you"; renderMarkers(); });
+    }).catch(() => { nearLabel = "you"; });
 });
 
 map.on("click", () => { _popupLocked = false; hideMapPopup(); hideSearch(); });
 
 map.on("moveend", () => {
   if (_progMove) { _progMove = false; } else { nearLabel = null; }
-  renderMarkers();
+  requestAnimationFrame(updatePinLabels);
 });
+
+// ════════════════════════
+//  CLUSTER ICON
+// ════════════════════════
+function clusterIcon(cluster) {
+  const n = cluster.getChildCount();
+  const big = n > 99;
+  return L.divIcon({
+    className: '',
+    html: `<div class="lsf-cluster${big ? ' big' : ''}">${n}</div>`,
+    iconSize:   big ? [44, 44] : [36, 36],
+    iconAnchor: big ? [22, 22] : [18, 18]
+  });
+}
 
 // ════════════════════════
 //  PINS
 // ════════════════════════
-function makeSmallPinIcon(vendor) {
-  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-sm" id="pin-${vendor.id}"><svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle fill="#00b4d8" cx="8" cy="8" r="8"/><circle fill="white" cx="8" cy="8" r="3.5"/></svg></div>`, iconSize:[16,16], iconAnchor:[8,8] });
-}
 function makeLargePinIcon(vendor) {
-  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-lg" id="pin-${vendor.id}"><svg width="25" height="34" viewBox="0 0 22 30" style="overflow:visible" xmlns="http://www.w3.org/2000/svg"><g filter="url(#pin-shadow)"><circle fill="white" cx="11" cy="11" r="11"/><polygon fill="white" points="4,19 11,29 18,19"/><circle class="pin-body" cx="11" cy="11" r="8.5"/><g transform="translate(5,5) scale(0.5)" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g></g></svg><span class="pin-label">${vendor.name}</span></div>`, iconSize:[25,34], iconAnchor:[12,33] });
+  return L.divIcon({
+    className: "",
+    html: `<div class="fvm-pin fvm-pin-lg" id="pin-${vendor.id}"><svg width="25" height="34" viewBox="0 0 22 30" style="overflow:visible" xmlns="http://www.w3.org/2000/svg"><g filter="url(#pin-shadow)"><circle fill="white" cx="11" cy="11" r="11"/><polygon fill="white" points="4,19 11,29 18,19"/><circle class="pin-body" cx="11" cy="11" r="8.5"/><g transform="translate(5,5) scale(0.5)" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g></g></svg><span class="pin-label">${vendor.name}</span></div>`,
+    iconSize:   [25, 34],
+    iconAnchor: [12, 33]
+  });
 }
 
-function renderMarkers() {
-  Object.values(markerMap).forEach(m => map.removeLayer(m));
-  markerMap = {};
-  const bounds = map.getBounds();
+// ════════════════════════
+//  INIT MARKERS — called once after vendors.json loads
+// ════════════════════════
+function initMarkers() {
+  clusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 60,
+    showCoverageOnHover: false,
+    iconCreateFunction: clusterIcon,
+    spiderfyOnMaxZoom: true,
+    removeOutsideVisibleBounds: true,
+    animate: true,
+  });
 
-  // Build (vendor, entry) list using the same stable entry logic as getVendorStatus —
-  // today's slot if trading today, otherwise next upcoming slot. This prevents
-  // a vendor's pin jumping to a different location when a different schedule
-  // entry happens to scroll into the map bounds.
-  const toPlace = [];
   VENDORS.forEach(vendor => {
-    const entry = getVendorStatus(vendor).entry;
-    if (!entry || !bounds.contains([entry.lat, entry.lng])) return;
-    toPlace.push({ vendor, entry });
-  });
-
-  // Spread pins that share identical coordinates into a small circle (~15m radius)
-  // so stacked vendors (e.g. two vans at the same market) are both always visible
-  const posKey = e => `${e.lat.toFixed(4)},${e.lng.toFixed(4)}`;
-  const groups = {};
-  toPlace.forEach(item => {
-    const k = posKey(item.entry);
-    (groups[k] = groups[k] || []).push(item);
-  });
-  // Build stack-peer map: each vendor knows which other vans share its location
-  _stackPeers = {};
-  Object.values(groups).forEach(group => {
-    if (group.length < 2) return;
-    group.forEach(item => {
-      _stackPeers[item.vendor.id] = group.filter(g => g !== item).map(g => g.vendor.id);
+    if (!vendor.lat || !vendor.lng) return;
+    const marker = L.marker([vendor.lat, vendor.lng], {
+      icon: makeLargePinIcon(vendor)
     });
-  });
 
-  const R = 0.00014; // ≈15m
-  Object.values(groups).forEach(group => {
-    if (group.length < 2) return;
-    group.forEach((item, i) => {
-      const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
-      item._lat = item.entry.lat + R * Math.cos(angle);
-      item._lng = item.entry.lng + R * Math.sin(angle) / Math.cos(item.entry.lat * Math.PI / 180);
+    marker.on('click', e => {
+      L.DomEvent.stopPropagation(e);
+      hideMapPopup();
+      pinClickVendor(vendor);
     });
-  });
 
-  toPlace.forEach(({ vendor, entry, _lat, _lng }) => {
-    const lat = _lat ?? entry.lat;
-    const lng = _lng ?? entry.lng;
-
-    const vendorStatus = getVendorStatus(vendor);
-    const isOpen = vendorStatus.state === "open" || vendorStatus.state === "closing-soon";
-    const zBase  = isOpen ? 200 : 0;
-    if (_vanZOffset[vendor.id] === undefined) _vanZOffset[vendor.id] = Math.floor(Math.random() * 150);
-    const zOrig  = zBase + _vanZOffset[vendor.id];
-    const m = L.marker([lat, lng], { icon: makeLargePinIcon(vendor), zIndexOffset: zOrig })
-      .addTo(map)
-      .on("click", e => {
-        L.DomEvent.stopPropagation(e);
-        hideMapPopup();
-        pinClickVendor(vendor);
-      });
-    // Simple hover — show card on mouseenter, schedule hide on mouseleave
-    requestAnimationFrame(() => {
-      const pinEl = document.getElementById(`pin-${vendor.id}`);
-      if (!pinEl) return;
-      pinEl.addEventListener("mouseenter", () => {
-        clearTimeout(_hoverTimer);
-        cancelHideMapPopup();
-        if (_popupVendor && _popupVendor.id === vendor.id) return;
-        _hoverTimer = setTimeout(() => {
-          if (_popupLocked) return;
-          document.querySelectorAll(".fvm-pin.hov").forEach(p => p.classList.remove("hov"));
-          pinEl.classList.add("hov");
-          showMapPopup(vendor);
-        }, 200);
-      });
-      pinEl.addEventListener("mouseleave", () => {
-        clearTimeout(_hoverTimer);
+    // Hover via Leaflet events (fire when pin is visible, not when clustered)
+    marker.on('mouseover', () => {
+      cancelHideMapPopup();
+      if (_popupVendor && _popupVendor.id === vendor.id) return;
+      clearTimeout(_hoverTimer);
+      _hoverTimer = setTimeout(() => {
+        if (_popupLocked) return;
         document.querySelectorAll(".fvm-pin.hov").forEach(p => p.classList.remove("hov"));
-        scheduleHideMapPopup();
-      });
+        const pinEl = document.getElementById(`pin-${vendor.id}`);
+        if (pinEl) pinEl.classList.add("hov");
+        showMapPopup(vendor);
+      }, 180);
     });
-    markerMap[vendor.id] = m;
+
+    marker.on('mouseout', () => {
+      clearTimeout(_hoverTimer);
+      const pinEl = document.getElementById(`pin-${vendor.id}`);
+      if (pinEl) pinEl.classList.remove("hov");
+      scheduleHideMapPopup();
+    });
+
+    clusterGroup.addLayer(marker);
+    markerMap[vendor.id] = marker;
   });
 
-  // Re-apply selected highlight after re-render
-  if (selectedVendor) {
-    const pin = document.getElementById(`pin-${selectedVendor.id}`);
-    if (pin) pin.classList.add("sel");
-  }
-
-  // Update label visibility based on screen spacing
+  map.addLayer(clusterGroup);
   requestAnimationFrame(updatePinLabels);
 }
 
-
 // ════════════════════════
-//  PIN CLICK → highlight card in list
+//  PIN CLICK → open popup + sheet
 // ════════════════════════
 function pinClickVendor(vendor) {
   selectedVendor = vendor;
@@ -1344,9 +1013,8 @@ function pinClickVendor(vendor) {
 }
 
 // ════════════════════════
-//  VAN DETAIL — bottom sheet
+//  VENDOR DETAIL — bottom sheet
 // ════════════════════════
-
 function openSheet(vendor) {
   // Gallery
   galPhotos = vendor.photos || (vendor.photo ? [vendor.photo] : []);
@@ -1354,37 +1022,40 @@ function openSheet(vendor) {
   galPage   = 0;
   renderGallery();
 
-  // L1: Name
   document.getElementById("sheet-name").textContent = vendor.name;
 
-  // L1b: Website (Bing-style, right under name)
+  // Website
   const siteUrl = vendor.website ? vendor.website.replace(/^https?:\/\//, "") : "";
   document.getElementById("sheet-website").innerHTML = siteUrl
     ? `<a href="https://${siteUrl}" target="_blank" rel="noopener">${siteUrl}</a>`
     : "";
 
-  // L2: Cuisine
-  document.getElementById("sheet-cuisine").textContent = vendor.cuisine;
+  // Tagline / cuisine type
+  document.getElementById("sheet-cuisine").textContent = vendor.tagline || cuisineLabel(vendor.cuisine);
 
-  // L3: Location
-  const status = getVendorStatus(vendor);
-  const entry  = status.entry;
-  const fmtLoc = (loc, pc) => pc ? `${loc.replace(/,\s*[A-Z]{1,2}\d{1,2}$/, '')}, ${pc}` : loc;
-  document.getElementById("sheet-location").innerHTML = entry
-    ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${fmtLoc(entry.location, entry.postcode)}</span>`
+  // Location: city
+  const locPin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+  document.getElementById("sheet-location").innerHTML = vendor.city
+    ? `${locPin}<span>${vendor.city}</span>`
     : "";
 
-  // L4: Open/closed status
-  const statusEl = document.getElementById("sheet-status");
-  statusEl.className = `vi-status ${status.state}`;
-  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-  const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-  statusEl.innerHTML = `${clockIcon}<span>${status.label} · <button id="sched-toggle" onclick="toggleSched()">Full week ${chevron}</button></span>`;
+  // Status — no schedule for these vendors
+  document.getElementById("sheet-status").innerHTML = "";
+  document.getElementById("sheet-status").className = "vi-status";
 
-  // L6: Description
+  // Schedule placeholder
+  document.getElementById("sheet-sched").textContent = "Market schedule coming soon";
+
+  // Dietary tags
+  const dietaryHtml = (vendor.dietary || []).slice(0, 8)
+    .map(d => `<span class="sheet-diet-tag">${d}</span>`)
+    .join('');
+  document.getElementById("sheet-dietary").innerHTML = dietaryHtml;
+
+  // Description
   document.getElementById("sheet-desc").textContent = vendor.desc || "";
 
-  // Instagram / menu link
+  // Instagram
   const igEl = document.getElementById("sheet-instagram");
   igEl.innerHTML = vendor.instagram
     ? `<a class="ig-link" href="https://instagram.com/${vendor.instagram.replace(/^@/,'')}" target="_blank" rel="noopener">
@@ -1393,37 +1064,12 @@ function openSheet(vendor) {
        </a>`
     : "";
 
-  // Schedule rows — hidden until toggle opened
-  // If all schedule entries share the same location, omit the location suffix (it never changes)
-  const uniqueLocs = new Set(vendor.schedule.map(e => fmtLoc(e.location, e.postcode)));
-  const isFixedLoc = uniqueLocs.size === 1;
-  function shRow(d) {
-    const e = vendor.schedule.find(s => s.days.includes(d));
-    const isToday = d === TODAY;
-    if (!e) return `<div class="sh-sr${isToday ? " today" : ""}"><span class="sh-day">${d}</span><span class="sh-info">Closed</span></div>`;
-    const locStr = fmtLoc(e.location, e.postcode);
-    const info   = isFixedLoc ? e.hours : `${e.hours} · ${locStr}`;
-    return `<div class="sh-sr${isToday ? " today" : ""}"><span class="sh-day">${d}</span><span class="sh-info">${info}</span></div>`;
-  }
-  const todayIdx = ALL_DAYS.indexOf(TODAY);
-  const orderedDays = [TODAY, ...ALL_DAYS.slice(todayIdx + 1), ...ALL_DAYS.slice(0, todayIdx)];
-  document.getElementById("sheet-sched").innerHTML = `<div id="sched-expanded">${orderedDays.map(shRow).join("")}</div>`;
-
   document.getElementById("sheet-scroll").scrollTop = 0;
   applySheetState('full');
 }
 
-function toggleSched() {
-  const exp = document.getElementById("sched-expanded");
-  const btn = document.getElementById("sched-toggle");
-  if (!exp || !btn) return;
-  const isOpen = btn.classList.contains("open");
-  exp.style.maxHeight = isOpen ? "0" : exp.scrollHeight + "px";
-  btn.classList.toggle("open", !isOpen);
-}
-
 // ════════════════════════
-//  BOTTOM SHEET STATE MACHINE  (hidden | full — no peek)
+//  BOTTOM SHEET STATE MACHINE
 // ════════════════════════
 let sheetState = 'hidden';
 
@@ -1456,10 +1102,6 @@ function closeSheet() {
   _activeCardId = null;
 }
 
-function closeCard() {
-  if (sheetState !== 'hidden') closeSheet();
-}
-
 // ════════════════════════
 //  SEARCH
 // ════════════════════════
@@ -1469,20 +1111,19 @@ let kbIdx = -1;
 const norm = s => (s || "").toLowerCase();
 
 function getVanResults(q) {
-  if (!q.trim()) return VENDORS.slice();
+  if (!q.trim()) return VENDORS.slice(0, 50); // cap empty results
   const lq = norm(q);
   return VENDORS.filter(v =>
     norm(v.name).includes(lq)    ||
-    norm(v.cuisine).includes(lq) ||
-    norm(v.area).includes(lq)    ||
-    norm(v.county).includes(lq)  ||
-    v.schedule.some(s => norm(s.location).includes(lq) || norm(s.area).includes(lq))
+    norm(v.tagline).includes(lq) ||
+    norm(v.city).includes(lq)    ||
+    (v.cuisine || []).some(c => norm(CUISINE_LABEL[c] || c).includes(lq)) ||
+    (v.dietary || []).some(d => norm(d).includes(lq))
   );
 }
 
 let _geoTimer = null;
-// Empty-state: Nearby row + area chips + cuisine chips
-// Chips call chipSearch(q) which fills the input and runs a search
+
 const SHORTCUTS_HTML = `
 <div class="dr" data-type="nearby" role="option">
   <div class="dr-name">Nearby</div>
@@ -1491,13 +1132,13 @@ const SHORTCUTS_HTML = `
 <div class="srch-shortcuts">
   <div class="dr-section">Popular areas</div>
   <div class="srch-chips">
-    ${['London','Edinburgh','Bristol','Bath','Glasgow','Oxford'].map(a =>
+    ${['London','Edinburgh','Bristol','Bath','Glasgow','Manchester','Birmingham','Brighton'].map(a =>
       `<button class="srch-chip" onmousedown="event.preventDefault()" onclick="chipSearch('${a}')">${a}</button>`
     ).join('')}
   </div>
-  <div class="dr-section">Cuisines</div>
+  <div class="dr-section">Food types</div>
   <div class="srch-chips">
-    ${['Pizza','Mexican','Korean','Burgers','BBQ','Crepes','Japanese'].map(c =>
+    ${['Pizza','BBQ','Burgers','Vegan','Halal','Tacos','Doughnuts','Coffee'].map(c =>
       `<button class="srch-chip" onmousedown="event.preventDefault()" onclick="chipSearch('${c}')">${c}</button>`
     ).join('')}
   </div>
@@ -1511,16 +1152,20 @@ function chipSearch(q) {
 function renderDrop(q) {
   kbIdx = -1;
   const vans = getVanResults(q);
-  const html = vans.map(v =>
+  const html = vans.slice(0, 20).map(v =>
     `<div class="dr" data-type="vendor" data-id="${v.id}" role="option">
       <div class="dr-name">${v.name}</div>
-      <div class="dr-sub">${v.cuisine} · ${v.area}</div>
+      <div class="dr-sub">${v.tagline || cuisineLabel(v.cuisine)}${v.city ? ' · ' + v.city : ''}</div>
     </div>`
   ).join("");
 
   $sd.innerHTML = !q.trim()
     ? SHORTCUTS_HTML
     : ((html || "") + `<div id="geo-results"></div>`);
+
+  if (q.trim() && !html) {
+    $sd.innerHTML = `<div class="dr-none">No results for "${q}"</div><div id="geo-results"></div>`;
+  }
 
   bindDropClicks();
   $sd.hidden = false;
@@ -1533,10 +1178,7 @@ function renderDrop(q) {
         .then(r => r.json())
         .then(places => {
           const $geo = document.getElementById("geo-results");
-          if (!$geo) return;
-          if (!places.length) { $geo.innerHTML = vans.length ? "" : `<div class="dr-none">No results for "${q}"</div>`; return; }
-          // Deduplicate by resolved display name — Nominatim often returns multiple
-          // entries for the same city (e.g. Bristol city + Bristol district)
+          if (!$geo || !places.length) return;
           const seenNames = new Set();
           const uniquePlaces = places.filter(p => {
             const n = p.address.city || p.address.town || p.address.village || p.address.county || p.display_name.split(",")[0];
@@ -1583,15 +1225,11 @@ function pickPlace(lat, lng, name) {
 }
 
 function pickResult(vendor) {
-  if (!vendor) return;
+  if (!vendor || !vendor.lat || !vendor.lng) return;
   $si.value = ""; hideSearch();
-  // Find best entry: today's if operating, else next slot
-  const status = getVendorStatus(vendor);
-  const entry  = status.entry || vendor.schedule[0];
-  nearLabel = entry.area || null;
+  nearLabel = vendor.city || null;
   _progMove = true;
-  map.setView([entry.lat, entry.lng], 15, { animate:true });
-  // Small delay so the map pan completes before the sheet opens
+  map.setView([vendor.lat, vendor.lng], 15, { animate:true });
   setTimeout(() => pinClickVendor(vendor), 300);
 }
 
@@ -1626,26 +1264,25 @@ $si.addEventListener("keydown", e => {
 });
 
 // ════════════════════════
-//  ADD YOUR VAN
+//  ADD YOUR LISTING
 // ════════════════════════
 function addYourVan() {
-  const sub  = encodeURIComponent("Add my vendor to FoodVanMap");
+  const sub  = encodeURIComponent("Add my vendor to Local Street Food");
   const body = encodeURIComponent(
-    "Hi,\n\nI'd like to add my food vendor to foodvanmap.com.\n\n" +
-    "Van name:\nCuisine type:\nLocation + postcode:\nCounty:\n" +
-    "Days I operate:\nTrading hours per day:\nInstagram:\nWebsite:\nDescription (2 sentences):\n\nThanks!"
+    "Hi,\n\nI'd like to add my street food vendor to localstreetfood.com.\n\n" +
+    "Vendor name:\nCuisine / food type:\nCity / area:\n" +
+    "Instagram:\nWebsite:\nDescription (2 sentences):\n\nThanks!"
   );
   window.location.href = `mailto:walker.robert@outlook.com?subject=${sub}&body=${body}`;
 }
 
 // ════════════════════════
-//  INIT
+//  PIN LABEL VISIBILITY
 // ════════════════════════
 function updatePinLabels() {
   const entries = Object.entries(markerMap);
   if (!entries.length) return;
 
-  // Below zoom 14: hide all labels
   if (map.getZoom() < 14) {
     entries.forEach(([id]) => {
       document.querySelector(`#pin-${id} .pin-label`)?.classList.add("lbl-hidden");
@@ -1653,7 +1290,6 @@ function updatePinLabels() {
     return;
   }
 
-  // Convert every visible marker to screen coordinates
   const pts = entries.map(([id, m]) => ({
     id,
     pt: map.latLngToContainerPoint(m.getLatLng())
@@ -1663,17 +1299,12 @@ function updatePinLabels() {
     const label = document.querySelector(`#pin-${id} .pin-label`);
     if (!label) return;
 
-    // If any other pin is within 20px in BOTH axes, pins are visually overlapping on
-    // screen — hide the label regardless of zoom (avoids text piling up on stacked pins).
-    // At high enough zoom the R-offset separates them beyond 20px and labels can show.
     const tooClose = pts.some(other => {
       if (other.id === id) return false;
       return Math.abs(other.pt.x - pt.x) < 20 && Math.abs(other.pt.y - pt.y) < 20;
     });
     if (tooClose) { label.classList.add("lbl-hidden"); return; }
 
-    // Pin is well-separated: hide only if another pin sits inside this label's
-    // screen territory (roughly 150px wide, 26px tall, to the right of the pin)
     const blocked = pts.some(other => {
       if (other.id === id) return false;
       const dx = other.pt.x - pt.x;
@@ -1683,17 +1314,55 @@ function updatePinLabels() {
     label.classList.toggle("lbl-hidden", blocked);
   });
 }
+
 map.on("zoomend moveend", updatePinLabels);
 
-// Hide the hover popup immediately when the user starts zooming or dragging the map.
-// Without this the popup lingers at its old screen position until the 300ms timer fires.
 map.on("zoomstart dragstart", () => {
   clearTimeout(_popupHideTimer);
   clearTimeout(_hoverTimer);
   hideMapPopup();
 });
 
-map.whenReady(() => { renderMarkers(); updatePinLabels(); });
+// ════════════════════════
+//  GEOLOCATION ON LOAD
+// ════════════════════════
+function tryGeolocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      map.setView(ll, 12, { animate: true });
+      showUserBeacon(ll);
+    },
+    () => { /* permission denied — keep UK overview */ },
+    { timeout: 8000, maximumAge: 300000 }
+  );
+}
+
+// ════════════════════════
+//  LOAD DATA + BOOT
+// ════════════════════════
+async function loadVendors() {
+  try {
+    const resp = await fetch('vendors.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    VENDORS = await resp.json();
+  } catch (err) {
+    console.error('Failed to load vendors.json:', err);
+    VENDORS = [];
+  }
+
+  // Dismiss loading screen
+  const overlay = document.getElementById('loading-overlay');
+  overlay.classList.add('hidden');
+  setTimeout(() => { overlay.style.display = 'none'; }, 350);
+
+  initMarkers();
+  updateSheetHeight();
+  tryGeolocation();
+}
+
+loadVendors();
 
 </script>
 </body>
