@@ -1344,14 +1344,18 @@ map.on("zoomstart dragstart", () => {
 //  3. Browser GPS     → precise, may prompt (upgrades whichever came first)
 // ════════════════════════
 
-// Save position whenever the user pans/zooms (so next visit starts exactly here)
+// Save position on pan/zoom so next visit opens exactly here.
+// Only save once the user has zoomed into a meaningful area (not the UK overview).
 map.on('moveend zoomend', () => {
-  if (!_savedPos && map.getZoom() < 8) return; // don't save UK overview
+  if (map.getZoom() < 8) return;
   try {
     const c = map.getCenter();
     sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
   } catch {}
 });
+
+// Target zoom — shows roughly a 50km radius (Oxford→Swindon→Reading scale)
+const GEO_ZOOM = 10;
 
 // IP-based geolocation — city level, no prompt needed, used on first visit only
 async function tryIPGeolocation() {
@@ -1361,7 +1365,7 @@ async function tryIPGeolocation() {
     if (!r.ok) return;
     const d = await r.json();
     if (d.latitude && d.longitude && map.getZoom() < 8) {
-      map.setView([d.latitude, d.longitude], 11, { animate: false });
+      map.setView([d.latitude, d.longitude], GEO_ZOOM, { animate: false });
     }
   } catch {}
 }
@@ -1374,13 +1378,13 @@ function tryGPSGeolocation() {
     pos => {
       const ll = [pos.coords.latitude, pos.coords.longitude];
       try {
-        sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: ll[0], lng: ll[1], zoom: 12 }));
+        sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: ll[0], lng: ll[1], zoom: GEO_ZOOM }));
       } catch {}
-      // Fly there with animation only if we haven't already positioned at a good zoom
+      // Animate only if we weren't already at a reasonable position
       if (alreadyPositioned) {
-        map.setView(ll, Math.max(map.getZoom(), 12), { animate: true, duration: 1 });
+        map.setView(ll, Math.max(map.getZoom(), GEO_ZOOM), { animate: true, duration: 1 });
       } else {
-        map.setView(ll, 12, { animate: true });
+        map.setView(ll, GEO_ZOOM, { animate: true });
       }
       showUserBeacon(ll);
     },
