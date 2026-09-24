@@ -161,7 +161,7 @@
     #sheet-overlay.open { opacity: 1; pointer-events: auto; }
 
     /* 3 cards wide: 3×280px + 2×10px gaps ≈ 880px, centred */
-    #van-sheet {
+    #vendor-sheet {
       position: fixed;
       left: 50%; bottom: 0;
       width: min(880px, calc(100% - 24px));
@@ -175,7 +175,7 @@
       transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
       overflow: hidden;
     }
-    /* JS owns all transforms on #van-sheet — the .open class is a state marker only */
+    /* JS owns all transforms on #vendor-sheet — the .open class is a state marker only */
 
     /* X sits top-right, in the white margin above the mosaic */
     #sheet-close {
@@ -406,7 +406,7 @@
     }
     .pop-icon-link:hover { background: #f5f5f5; border-color: #bbb; color: #111; }
     /* ── Bottom sheet hidden for now ── */
-    #van-sheet, #sheet-overlay { display: none !important; }
+    #vendor-sheet, #sheet-overlay { display: none !important; }
     .pin-label {
       position: absolute; left: 26px; top: 5px; white-space: nowrap; cursor: pointer;
       font-size: 13px; font-weight: 400; color: #222; letter-spacing: -0.1px;
@@ -524,7 +524,7 @@
 
 <!-- ══ BOTTOM SHEET ══ -->
 <div id="sheet-overlay" onclick="closeSheet()"></div>
-<div id="van-sheet" role="dialog" aria-modal="true">
+<div id="vendor-sheet" role="dialog" aria-modal="true">
   <!-- X sits in the white margin above the mosaic -->
   <button id="sheet-close" onclick="closeSheet()" aria-label="Close">
     <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -570,7 +570,7 @@
 // ════════════════════════════════════════════════════════
 //  DATA
 // ════════════════════════════════════════════════════════
-const VANS = [
+const VENDORS = [
   {
     id:1, name:"Son of a Bun", cuisine:"Fried Chicken & Burgers",
     photo:"https://d32nt98g3gjlwu.cloudfront.net/04111234-3d28-4c79-a37a-8754516f416d/6V2rRBI_09/Feast_It_son-of-a-bun-CZ876tWIhI.jpg",
@@ -766,7 +766,7 @@ const VANS = [
       { location:"Stockbridge Market, Edinburgh", area:"Stockbridge", days:["Sunday"],       hours:"10:00 - 17:00",  lat:55.9578, lng:-3.2067, postcode:"EH4 1QS" }
     ],
     instagram: null,
-    desc:"Award-winning wood-fired pizza van serving Edinburgh. Dough made fresh from scratch — authentic Neapolitan pizzas that'll have everyone coming back for more.",
+    desc:"Award-winning wood-fired pizza vendor serving Edinburgh. Dough made fresh from scratch — authentic Neapolitan pizzas that'll have everyone coming back for more.",
     dietary:["vegan","vegetarian"]
   },
   {
@@ -814,7 +814,7 @@ const ALL_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday",
 const jsDay    = new Date().getDay();
 const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
 const TODAY    = ALL_DAYS[todayIdx];          // e.g. "Friday" — fixed for the session
-let selectedVan  = null;
+let selectedVendor  = null;
 let markerMap    = {};
 let nearLabel    = null;
 let _progMove    = false;
@@ -862,11 +862,11 @@ function getDayLabel(day) {
   return day;
 }
 
-function nextSlot(van, fromDay) {
+function nextSlot(vendor, fromDay) {
   const idx = ALL_DAYS.indexOf(fromDay);
   for (let i = 1; i <= 7; i++) {
     const d = ALL_DAYS[(idx + i) % 7];
-    const e = van.schedule.find(s => s.days.includes(d));
+    const e = vendor.schedule.find(s => s.days.includes(d));
     if (e) return { day: d, entry: e };
   }
   return null;
@@ -877,11 +877,11 @@ function nextSlot(van, fromDay) {
 // Returns { state, label, entry }
 // state: "open" | "closing-soon" | "upcoming" | "future" | "none"
 // ════════════════════════
-function getVanStatus(van) {
+function getVendorStatus(vendor) {
   const now     = new Date();
   const curMins = now.getHours() * 60 + now.getMinutes();
 
-  const todayEntry = van.schedule.find(s => s.days.includes(TODAY));
+  const todayEntry = vendor.schedule.find(s => s.days.includes(TODAY));
 
   if (todayEntry) {
     const parts    = (todayEntry.hours || "").split(" - ");
@@ -894,7 +894,7 @@ function getVanStatus(van) {
       }
       if (curMins >= closeMins) {
         // Done for today — find next slot
-        const next = nextSlot(van, TODAY);
+        const next = nextSlot(vendor, TODAY);
         if (!next) return { state:"none", label:"Closed", entry:null };
         const dl = getDayLabel(next.day);
         const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
@@ -912,7 +912,7 @@ function getVanStatus(van) {
   }
 
   // Not operating today — find next slot
-  const next = nextSlot(van, TODAY);
+  const next = nextSlot(vendor, TODAY);
   if (!next) return { state:"none", label:"Closed", entry:null };
   const dl = getDayLabel(next.day);
   const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
@@ -923,18 +923,18 @@ function getVanStatus(van) {
 //  MAP HOVER POPUP
 // ════════════════════════
 let _popupHideTimer = null;
-let _popupVan = null;
+let _popupVendor = null;
 let _hoverTimer = null;
 let _popupLocked = false;
 
-function showMapPopup(van) {
-  _popupVan = van;
+function showMapPopup(vendor) {
+  _popupVendor = vendor;
   const mapEl  = document.getElementById("map");
-  const status = getVanStatus(van);
-  const entry  = status.entry || van.schedule[0];
+  const status = getVendorStatus(vendor);
+  const entry  = status.entry || vendor.schedule[0];
   if (!entry) return;
 
-  const marker = markerMap[van.id];
+  const marker = markerMap[vendor.id];
   const pinLL  = marker ? marker.getLatLng() : [entry.lat, entry.lng];
   const pt     = map.latLngToContainerPoint(pinLL);
   const mapW   = mapEl.offsetWidth;
@@ -942,12 +942,12 @@ function showMapPopup(van) {
 
   // ── Rich popup with photo navigation ──
   const popup = document.getElementById("map-popup");
-  _ppPhotos = van.photos || (van.photo ? [van.photo] : []);
+  _ppPhotos = vendor.photos || (vendor.photo ? [vendor.photo] : []);
   const hasPhoto = _ppPhotos.length > 0;
   popup.classList.toggle("no-photo", !hasPhoto);
   if (hasPhoto) { ppShowPhoto(0); preloadPopupPhotos(_ppPhotos); }
-  document.getElementById("popup-name").textContent = van.name;
-  document.getElementById("popup-cuis").textContent = van.cuisine;
+  document.getElementById("popup-name").textContent = vendor.name;
+  document.getElementById("popup-cuis").textContent = vendor.cuisine;
   const locEl = document.getElementById("popup-loc");
   locEl.textContent   = entry.location || "";
   locEl.style.display = entry.location ? "block" : "none";
@@ -957,8 +957,8 @@ function showMapPopup(van) {
   const igSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>`;
   const webSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
   const links = [
-    van.instagram ? `<a class="pop-icon-link" href="https://instagram.com/${van.instagram.replace(/^@/,'')}" target="_blank" rel="noopener" title="Instagram">${igSvg}</a>` : '',
-    van.website   ? `<a class="pop-icon-link" href="${van.website.startsWith('http') ? van.website : 'https://'+van.website}" target="_blank" rel="noopener" title="Website">${webSvg}</a>` : '',
+    vendor.instagram ? `<a class="pop-icon-link" href="https://instagram.com/${vendor.instagram.replace(/^@/,'')}" target="_blank" rel="noopener" title="Instagram">${igSvg}</a>` : '',
+    vendor.website   ? `<a class="pop-icon-link" href="${vendor.website.startsWith('http') ? vendor.website : 'https://'+vendor.website}" target="_blank" rel="noopener" title="Website">${webSvg}</a>` : '',
   ].filter(Boolean).join('');
   document.getElementById("popup-links").innerHTML = links;
 
@@ -1016,15 +1016,15 @@ function hideMapPopup() {
   document.getElementById("map-popup").style.display = "none";
   document.getElementById("pin-tooltip").style.display = "none";
   document.getElementById("map-wrap").classList.remove("popup-active");
-  if (_popupVan) {
-    document.getElementById(`pin-${_popupVan.id}`)?.classList.remove("hov");
+  if (_popupVendor) {
+    document.getElementById(`pin-${_popupVendor.id}`)?.classList.remove("hov");
   }
   // Clear selected (enlarged) pin state
   document.querySelectorAll(".fvm-pin.sel").forEach(p => p.classList.remove("sel"));
   _activeCardId = null;
-  selectedVan   = null;
+  selectedVendor   = null;
   _popupLocked  = false;
-  _popupVan     = null;
+  _popupVendor     = null;
 }
 
 function scheduleHideMapPopup() {
@@ -1047,8 +1047,8 @@ document.getElementById("map-popup").addEventListener("mouseleave", () => {
 
 // Popup click intentionally does nothing — card stays until map click dismisses it.
 
-const _vanZOffset   = {};   // van.id → stable random offset (0–149); persists across re-renders
-let   _activeCardId = null; // van.id of currently selected pin (drives .sel class)
+const _vanZOffset   = {};   // vendor.id → stable random offset (0–149); persists across re-renders
+let   _activeCardId = null; // vendor.id of currently selected pin (drives .sel class)
 
 // ════════════════════════
 //  GALLERY — group-based mosaic strip
@@ -1170,7 +1170,7 @@ L.control.zoom({ position:"topright" }).addTo(map);
 // Measured after Leaflet has painted (two rAFs to ensure layout is settled).
 function updateSheetHeight() {
   const zoomIn  = document.querySelector('.leaflet-control-zoom-in');
-  const sheetEl = document.getElementById('van-sheet');
+  const sheetEl = document.getElementById('vendor-sheet');
   if (!zoomIn || !sheetEl) return;
   const h = Math.max(300, Math.round(window.innerHeight - zoomIn.getBoundingClientRect().top - 8));
   sheetEl.style.height = h + 'px';
@@ -1228,11 +1228,11 @@ map.on("moveend", () => {
 // ════════════════════════
 //  PINS
 // ════════════════════════
-function makeSmallPinIcon(van) {
-  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-sm" id="pin-${van.id}"><svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle fill="#00b4d8" cx="8" cy="8" r="8"/><circle fill="white" cx="8" cy="8" r="3.5"/></svg></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+function makeSmallPinIcon(vendor) {
+  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-sm" id="pin-${vendor.id}"><svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle fill="#00b4d8" cx="8" cy="8" r="8"/><circle fill="white" cx="8" cy="8" r="3.5"/></svg></div>`, iconSize:[16,16], iconAnchor:[8,8] });
 }
-function makeLargePinIcon(van) {
-  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-lg" id="pin-${van.id}"><svg width="25" height="34" viewBox="0 0 22 30" style="overflow:visible" xmlns="http://www.w3.org/2000/svg"><g filter="url(#pin-shadow)"><circle fill="white" cx="11" cy="11" r="11"/><polygon fill="white" points="4,19 11,29 18,19"/><circle class="pin-body" cx="11" cy="11" r="8.5"/><g transform="translate(5,5) scale(0.5)" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g></g></svg><span class="pin-label">${van.name}</span></div>`, iconSize:[25,34], iconAnchor:[12,33] });
+function makeLargePinIcon(vendor) {
+  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-lg" id="pin-${vendor.id}"><svg width="25" height="34" viewBox="0 0 22 30" style="overflow:visible" xmlns="http://www.w3.org/2000/svg"><g filter="url(#pin-shadow)"><circle fill="white" cx="11" cy="11" r="11"/><polygon fill="white" points="4,19 11,29 18,19"/><circle class="pin-body" cx="11" cy="11" r="8.5"/><g transform="translate(5,5) scale(0.5)" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g></g></svg><span class="pin-label">${vendor.name}</span></div>`, iconSize:[25,34], iconAnchor:[12,33] });
 }
 
 function renderMarkers() {
@@ -1240,15 +1240,15 @@ function renderMarkers() {
   markerMap = {};
   const bounds = map.getBounds();
 
-  // Build (van, entry) list using the same stable entry logic as getVanStatus —
+  // Build (vendor, entry) list using the same stable entry logic as getVendorStatus —
   // today's slot if trading today, otherwise next upcoming slot. This prevents
   // a vendor's pin jumping to a different location when a different schedule
   // entry happens to scroll into the map bounds.
   const toPlace = [];
-  VANS.forEach(van => {
-    const entry = getVanStatus(van).entry;
+  VENDORS.forEach(vendor => {
+    const entry = getVendorStatus(vendor).entry;
     if (!entry || !bounds.contains([entry.lat, entry.lng])) return;
-    toPlace.push({ van, entry });
+    toPlace.push({ vendor, entry });
   });
 
   // Spread pins that share identical coordinates into a small circle (~15m radius)
@@ -1259,12 +1259,12 @@ function renderMarkers() {
     const k = posKey(item.entry);
     (groups[k] = groups[k] || []).push(item);
   });
-  // Build stack-peer map: each van knows which other vans share its location
+  // Build stack-peer map: each vendor knows which other vans share its location
   _stackPeers = {};
   Object.values(groups).forEach(group => {
     if (group.length < 2) return;
     group.forEach(item => {
-      _stackPeers[item.van.id] = group.filter(g => g !== item).map(g => g.van.id);
+      _stackPeers[item.vendor.id] = group.filter(g => g !== item).map(g => g.vendor.id);
     });
   });
 
@@ -1278,35 +1278,35 @@ function renderMarkers() {
     });
   });
 
-  toPlace.forEach(({ van, entry, _lat, _lng }) => {
+  toPlace.forEach(({ vendor, entry, _lat, _lng }) => {
     const lat = _lat ?? entry.lat;
     const lng = _lng ?? entry.lng;
 
-    const vanStatus = getVanStatus(van);
-    const isOpen = vanStatus.state === "open" || vanStatus.state === "closing-soon";
+    const vendorStatus = getVendorStatus(vendor);
+    const isOpen = vendorStatus.state === "open" || vendorStatus.state === "closing-soon";
     const zBase  = isOpen ? 200 : 0;
-    if (_vanZOffset[van.id] === undefined) _vanZOffset[van.id] = Math.floor(Math.random() * 150);
-    const zOrig  = zBase + _vanZOffset[van.id];
-    const m = L.marker([lat, lng], { icon: makeLargePinIcon(van), zIndexOffset: zOrig })
+    if (_vanZOffset[vendor.id] === undefined) _vanZOffset[vendor.id] = Math.floor(Math.random() * 150);
+    const zOrig  = zBase + _vanZOffset[vendor.id];
+    const m = L.marker([lat, lng], { icon: makeLargePinIcon(vendor), zIndexOffset: zOrig })
       .addTo(map)
       .on("click", e => {
         L.DomEvent.stopPropagation(e);
         hideMapPopup();
-        pinClickVan(van);
+        pinClickVendor(vendor);
       });
     // Simple hover — show card on mouseenter, schedule hide on mouseleave
     requestAnimationFrame(() => {
-      const pinEl = document.getElementById(`pin-${van.id}`);
+      const pinEl = document.getElementById(`pin-${vendor.id}`);
       if (!pinEl) return;
       pinEl.addEventListener("mouseenter", () => {
         clearTimeout(_hoverTimer);
         cancelHideMapPopup();
-        if (_popupVan && _popupVan.id === van.id) return;
+        if (_popupVendor && _popupVendor.id === vendor.id) return;
         _hoverTimer = setTimeout(() => {
           if (_popupLocked) return;
           document.querySelectorAll(".fvm-pin.hov").forEach(p => p.classList.remove("hov"));
           pinEl.classList.add("hov");
-          showMapPopup(van);
+          showMapPopup(vendor);
         }, 200);
       });
       pinEl.addEventListener("mouseleave", () => {
@@ -1315,12 +1315,12 @@ function renderMarkers() {
         scheduleHideMapPopup();
       });
     });
-    markerMap[van.id] = m;
+    markerMap[vendor.id] = m;
   });
 
   // Re-apply selected highlight after re-render
-  if (selectedVan) {
-    const pin = document.getElementById(`pin-${selectedVan.id}`);
+  if (selectedVendor) {
+    const pin = document.getElementById(`pin-${selectedVendor.id}`);
     if (pin) pin.classList.add("sel");
   }
 
@@ -1332,42 +1332,42 @@ function renderMarkers() {
 // ════════════════════════
 //  PIN CLICK → highlight card in list
 // ════════════════════════
-function pinClickVan(van) {
-  selectedVan = van;
+function pinClickVendor(vendor) {
+  selectedVendor = vendor;
   hideSearch();
   document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
-  const pin = document.getElementById(`pin-${van.id}`);
+  const pin = document.getElementById(`pin-${vendor.id}`);
   if (pin) pin.classList.add("sel");
-  _activeCardId = van.id;
+  _activeCardId = vendor.id;
   _popupLocked = true;
-  showMapPopup(van);
+  showMapPopup(vendor);
 }
 
 // ════════════════════════
 //  VAN DETAIL — bottom sheet
 // ════════════════════════
 
-function openSheet(van) {
+function openSheet(vendor) {
   // Gallery
-  galPhotos = van.photos || (van.photo ? [van.photo] : []);
+  galPhotos = vendor.photos || (vendor.photo ? [vendor.photo] : []);
   galIdx    = 0;
   galPage   = 0;
   renderGallery();
 
   // L1: Name
-  document.getElementById("sheet-name").textContent = van.name;
+  document.getElementById("sheet-name").textContent = vendor.name;
 
   // L1b: Website (Bing-style, right under name)
-  const siteUrl = van.website ? van.website.replace(/^https?:\/\//, "") : "";
+  const siteUrl = vendor.website ? vendor.website.replace(/^https?:\/\//, "") : "";
   document.getElementById("sheet-website").innerHTML = siteUrl
     ? `<a href="https://${siteUrl}" target="_blank" rel="noopener">${siteUrl}</a>`
     : "";
 
   // L2: Cuisine
-  document.getElementById("sheet-cuisine").textContent = van.cuisine;
+  document.getElementById("sheet-cuisine").textContent = vendor.cuisine;
 
   // L3: Location
-  const status = getVanStatus(van);
+  const status = getVendorStatus(vendor);
   const entry  = status.entry;
   const fmtLoc = (loc, pc) => pc ? `${loc.replace(/,\s*[A-Z]{1,2}\d{1,2}$/, '')}, ${pc}` : loc;
   document.getElementById("sheet-location").innerHTML = entry
@@ -1382,12 +1382,12 @@ function openSheet(van) {
   statusEl.innerHTML = `${clockIcon}<span>${status.label} · <button id="sched-toggle" onclick="toggleSched()">Full week ${chevron}</button></span>`;
 
   // L6: Description
-  document.getElementById("sheet-desc").textContent = van.desc || "";
+  document.getElementById("sheet-desc").textContent = vendor.desc || "";
 
   // Instagram / menu link
   const igEl = document.getElementById("sheet-instagram");
-  igEl.innerHTML = van.instagram
-    ? `<a class="ig-link" href="https://instagram.com/${van.instagram.replace(/^@/,'')}" target="_blank" rel="noopener">
+  igEl.innerHTML = vendor.instagram
+    ? `<a class="ig-link" href="https://instagram.com/${vendor.instagram.replace(/^@/,'')}" target="_blank" rel="noopener">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
         Menu &amp; updates
        </a>`
@@ -1395,10 +1395,10 @@ function openSheet(van) {
 
   // Schedule rows — hidden until toggle opened
   // If all schedule entries share the same location, omit the location suffix (it never changes)
-  const uniqueLocs = new Set(van.schedule.map(e => fmtLoc(e.location, e.postcode)));
+  const uniqueLocs = new Set(vendor.schedule.map(e => fmtLoc(e.location, e.postcode)));
   const isFixedLoc = uniqueLocs.size === 1;
   function shRow(d) {
-    const e = van.schedule.find(s => s.days.includes(d));
+    const e = vendor.schedule.find(s => s.days.includes(d));
     const isToday = d === TODAY;
     if (!e) return `<div class="sh-sr${isToday ? " today" : ""}"><span class="sh-day">${d}</span><span class="sh-info">Closed</span></div>`;
     const locStr = fmtLoc(e.location, e.postcode);
@@ -1428,7 +1428,7 @@ function toggleSched() {
 let sheetState = 'hidden';
 
 function applySheetState(state, animate = true) {
-  const sheetEl   = document.getElementById('van-sheet');
+  const sheetEl   = document.getElementById('vendor-sheet');
   const overlayEl = document.getElementById('sheet-overlay');
   sheetState = state;
   const h = sheetEl.offsetHeight || Math.round(window.innerHeight * 0.88);
@@ -1439,20 +1439,20 @@ function applySheetState(state, animate = true) {
   sheetEl.classList.toggle('open', state !== 'hidden');
 }
 
-function selectVan(van) {
-  selectedVan = van;
-  _activeCardId = van.id;
+function selectVendor(vendor) {
+  selectedVendor = vendor;
+  _activeCardId = vendor.id;
   hideSearch();
   document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
-  const pin = document.getElementById(`pin-${van.id}`);
+  const pin = document.getElementById(`pin-${vendor.id}`);
   if (pin) pin.classList.add("sel");
-  openSheet(van);
+  openSheet(vendor);
 }
 
 function closeSheet() {
   applySheetState('hidden');
   document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
-  selectedVan = null;
+  selectedVendor = null;
   _activeCardId = null;
 }
 
@@ -1469,9 +1469,9 @@ let kbIdx = -1;
 const norm = s => (s || "").toLowerCase();
 
 function getVanResults(q) {
-  if (!q.trim()) return VANS.slice();
+  if (!q.trim()) return VENDORS.slice();
   const lq = norm(q);
-  return VANS.filter(v =>
+  return VENDORS.filter(v =>
     norm(v.name).includes(lq)    ||
     norm(v.cuisine).includes(lq) ||
     norm(v.area).includes(lq)    ||
@@ -1512,7 +1512,7 @@ function renderDrop(q) {
   kbIdx = -1;
   const vans = getVanResults(q);
   const html = vans.map(v =>
-    `<div class="dr" data-type="van" data-id="${v.id}" role="option">
+    `<div class="dr" data-type="vendor" data-id="${v.id}" role="option">
       <div class="dr-name">${v.name}</div>
       <div class="dr-sub">${v.cuisine} · ${v.area}</div>
     </div>`
@@ -1570,7 +1570,7 @@ function bindDropClicks() {
       } else if (el.dataset.type === "place") {
         pickPlace(+el.dataset.lat, +el.dataset.lng, el.dataset.name);
       } else {
-        pickResult(VANS.find(v => v.id === +el.dataset.id));
+        pickResult(VENDORS.find(v => v.id === +el.dataset.id));
       }
     });
   });
@@ -1582,17 +1582,17 @@ function pickPlace(lat, lng, name) {
   map.setView([lat, lng], 13, { animate:true });
 }
 
-function pickResult(van) {
-  if (!van) return;
+function pickResult(vendor) {
+  if (!vendor) return;
   $si.value = ""; hideSearch();
   // Find best entry: today's if operating, else next slot
-  const status = getVanStatus(van);
-  const entry  = status.entry || van.schedule[0];
+  const status = getVendorStatus(vendor);
+  const entry  = status.entry || vendor.schedule[0];
   nearLabel = entry.area || null;
   _progMove = true;
   map.setView([entry.lat, entry.lng], 15, { animate:true });
   // Small delay so the map pan completes before the sheet opens
-  setTimeout(() => pinClickVan(van), 300);
+  setTimeout(() => pinClickVendor(vendor), 300);
 }
 
 function hideSearch() {
@@ -1617,7 +1617,7 @@ $si.addEventListener("keydown", e => {
     } else if (el.dataset.type === "place") {
       pickPlace(+el.dataset.lat, +el.dataset.lng, el.dataset.name);
     } else {
-      pickResult(VANS.find(v => v.id === +el.dataset.id));
+      pickResult(VENDORS.find(v => v.id === +el.dataset.id));
     }
     return;
   }
@@ -1629,9 +1629,9 @@ $si.addEventListener("keydown", e => {
 //  ADD YOUR VAN
 // ════════════════════════
 function addYourVan() {
-  const sub  = encodeURIComponent("Add my van to FoodVanMap");
+  const sub  = encodeURIComponent("Add my vendor to FoodVanMap");
   const body = encodeURIComponent(
-    "Hi,\n\nI'd like to add my food van to foodvanmap.com.\n\n" +
+    "Hi,\n\nI'd like to add my food vendor to foodvanmap.com.\n\n" +
     "Van name:\nCuisine type:\nLocation + postcode:\nCounty:\n" +
     "Days I operate:\nTrading hours per day:\nInstagram:\nWebsite:\nDescription (2 sentences):\n\nThanks!"
   );
