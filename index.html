@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <title>local street food — find street food near you</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
@@ -628,6 +629,10 @@ function photoUrl(url, w=320, h=320) {
   if (url.includes("res.cloudinary.com")) {
     return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
   }
+  if (url.includes("imgix.net") || url.includes("feast-it-web-prod")) {
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}w=${w}&h=${h}&fit=crop&auto=format,compress&q=75`;
+  }
   return url;
 }
 
@@ -854,7 +859,16 @@ document.addEventListener("keydown", e => {
 // ════════════════════════
 //  MAP
 // ════════════════════════
-const map = L.map("map", { center:[52.8, -1.8], zoom:6, zoomControl:false });
+// Restore last-known position instantly so the page never flickers to UK view
+const _savedPos = (() => {
+  try { const p = sessionStorage.getItem('lsf_pos'); return p ? JSON.parse(p) : null; }
+  catch { return null; }
+})();
+const map = L.map("map", {
+  center: _savedPos ? [_savedPos.lat, _savedPos.lng] : [52.8, -1.8],
+  zoom:   _savedPos ? (_savedPos.zoom || 12) : 6,
+  zoomControl: false
+});
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
   subdomains:"abcd", maxZoom:19
@@ -1324,18 +1338,54 @@ map.on("zoomstart dragstart", () => {
 });
 
 // ════════════════════════
-//  GEOLOCATION ON LOAD
+//  GEOLOCATION — three-layer approach
+//  1. sessionStorage  → instant, no flicker on return visits
+//  2. IP geolocation  → city-level, no permission prompt (first visit)
+//  3. Browser GPS     → precise, may prompt (upgrades whichever came first)
 // ════════════════════════
-function tryGeolocation() {
+
+// Save position whenever the user pans/zooms (so next visit starts exactly here)
+map.on('moveend zoomend', () => {
+  if (!_savedPos && map.getZoom() < 8) return; // don't save UK overview
+  try {
+    const c = map.getCenter();
+    sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
+  } catch {}
+});
+
+// IP-based geolocation — city level, no prompt needed, used on first visit only
+async function tryIPGeolocation() {
+  if (_savedPos) return; // already positioned
+  try {
+    const r = await fetch('https://ipapi.co/json/', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.latitude && d.longitude && map.getZoom() < 8) {
+      map.setView([d.latitude, d.longitude], 11, { animate: false });
+    }
+  } catch {}
+}
+
+// Precise GPS — upgrades the map position silently if already positioned, or flies there
+function tryGPSGeolocation() {
   if (!navigator.geolocation) return;
+  const alreadyPositioned = _savedPos || map.getZoom() > 8;
   navigator.geolocation.getCurrentPosition(
     pos => {
       const ll = [pos.coords.latitude, pos.coords.longitude];
-      map.setView(ll, 12, { animate: true });
+      try {
+        sessionStorage.setItem('lsf_pos', JSON.stringify({ lat: ll[0], lng: ll[1], zoom: 12 }));
+      } catch {}
+      // Fly there with animation only if we haven't already positioned at a good zoom
+      if (alreadyPositioned) {
+        map.setView(ll, Math.max(map.getZoom(), 12), { animate: true, duration: 1 });
+      } else {
+        map.setView(ll, 12, { animate: true });
+      }
       showUserBeacon(ll);
     },
-    () => { /* permission denied — keep UK overview */ },
-    { timeout: 8000, maximumAge: 300000 }
+    () => { /* denied — keep wherever we are */ },
+    { timeout: 10000, maximumAge: 300000 }
   );
 }
 
@@ -1359,10 +1409,12 @@ async function loadVendors() {
 
   initMarkers();
   updateSheetHeight();
-  tryGeolocation();
 }
 
-loadVendors();
+// Launch geolocation immediately and in parallel with data fetch
+tryIPGeolocation();  // no prompt, city-level
+tryGPSGeolocation(); // may prompt, precise
+loadVendors();       // fetch data concurrently
 
 </script>
 </body>
