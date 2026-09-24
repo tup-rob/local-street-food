@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>local street food — find street food near you</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      height: 100dvh; display: flex; flex-direction: column;
+      overflow: hidden; background: #f5f5f5; color: #111;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      padding: 0 16px;
+      height: 52px;
+      gap: 14px;
+      background: #fff;
+      border-bottom: 2px solid #111;
+      flex-shrink: 0;
+      z-index: 1001;
+    }
+    .hd-left { display: flex; align-items: center; gap: 9px; }
+    .hd-right { display: flex; align-items: center; }
+
+    .logo-mark {
+      width: 24px; height: 24px; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0;
+    }
+    .logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.4px; color: #111; white-space: nowrap; }
+    .beta-pill {
+      font-size: 10px; font-weight: 600; color: #111;
+      background: #fff; border: 1px solid #d0d0d0;
+      border-radius: 4px; padding: 1px 5px; white-space: nowrap;
+    }
+    #add-btn {
+      background: #fff; color: #111; border: 1px solid #d0d0d0; border-radius: 6px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      font-weight: 400; letter-spacing: -0.1px;
+      font-family: inherit;
+    }
+    #add-btn:hover { background: #f5f5f5; }
+
+    /* ── SEARCH ── */
+    #search-wrap { position: relative; }
+    #search-row  { position: relative; }
+    #search-input {
+      width: 100%; padding: 7px 12px 7px 32px;
+      border: 1px solid #999; border-radius: 6px;
+      background: #fafafa; font-size: 13px; font-family: inherit;
+      color: #111; outline: none; transition: border-color 0.15s;
+    }
+    #search-input:focus { border-color: #999; background: #fff; }
+    #search-input::placeholder { color: #bbb; }
+    .si-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+
+    #search-drop {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 2000;
+      background: #fff; border: 1px solid #e5e5e5; border-radius: 10px;
+      max-height: 400px; overflow-y: auto;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .dr { padding: 10px 13px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.1s; }
+    .dr:last-child { border-bottom: none; }
+    .dr:hover, .dr.kact { background: #f8f8f8; }
+    .dr-name { font-size: 14px; font-weight: 600; color: #111; }
+    .dr-sub  { font-size: 12px; color: #999; margin-top: 2px; }
+    /* Empty-state suggestion chips */
+    .srch-shortcuts { padding: 8px 12px 10px; }
+    .srch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .srch-chip {
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid #e8e8e8; background: #f6f6f6;
+      font-size: 12px; color: #444; font-family: inherit;
+      cursor: pointer; transition: background 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+    .srch-chip:hover { background: #ececec; border-color: #ccc; }
+    .dr-none    { padding: 14px; font-size: 13px; color: #aaa; text-align: center; }
+    .dr-section { padding: 5px 13px 3px; font-size: 10px; font-weight: 700; color: #aaa; letter-spacing: 0.5px; text-transform: uppercase; }
+
+    /* ── LOCATION BEACON ── */
+    .user-beacon { position: relative; width: 22px; height: 22px; }
+    .user-beacon-dot {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 13px; height: 13px;
+      background: #007AFF; border: 2.5px solid white;
+      border-radius: 50%; box-shadow: 0 1px 5px rgba(0,0,0,0.35); z-index: 2;
+    }
+    .user-beacon-ring {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 13px; height: 13px; border-radius: 50%;
+      background: rgba(0,122,255,0.35);
+      animation: beacon-pulse 2s ease-out infinite;
+    }
+    @keyframes beacon-pulse {
+      0%   { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(4); opacity: 0; }
+    }
+
+    /* ── MAIN ── */
+    #main { flex: 1; display: flex; flex-direction: row; position: relative; min-height: 0; overflow: hidden; }
+
+    /* ── MAP fills full #main ── */
+    #map-wrap { flex: 1; position: relative; min-width: 0; }
+
+
+    /* Status chip colours (used in sheet) */
+    .vi-status { font-size: 14px; font-weight: 400; color: #555; }
+    .vi-status.open         .vi-key { color: #16a34a; }
+    .vi-status.closing-soon .vi-key { color: #d97706; }
+    .vi-status.upcoming     .vi-key { color: #dc2626; }
+    .vi-status.future       .vi-key { color: #dc2626; }
+
+    /* Gallery arrows — sit inside the photo mosaic, overlapping the left/right edges */
+    .gal-arrow {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,0.93); border: none;
+      width: 28px; height: 28px; border-radius: 50%;
+      font-size: 18px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: #111; z-index: 2;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.22);
+    }
+    .gal-arrow:hover { background: #fff; }
+    #gal-prev { left: 10px; } #gal-next { right: 10px; }
+    #gal-dots {
+      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; align-items: center;
+    }
+    .gal-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(255,255,255,0.55); cursor: pointer;
+      transition: background 0.15s, transform 0.15s;
+    }
+    .gal-dot.active { background: #fff; transform: scale(1.3); }
+    .gal-count {
+      background: rgba(0,0,0,0.5); color: #fff;
+      font-size: 11px; font-weight: 500; padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* ── BOTTOM SHEET ── */
+    #sheet-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 800;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    #sheet-overlay.open { opacity: 1; pointer-events: auto; }
+
+    /* 3 cards wide: 3×280px + 2×10px gaps ≈ 880px, centred */
+    #van-sheet {
+      position: fixed;
+      left: 50%; bottom: 0;
+      width: min(880px, calc(100% - 24px));
+      height: 88vh; /* JS overrides this to align ceiling with zoom control */
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      box-shadow: 0 -4px 32px rgba(0,0,0,0.18);
+      z-index: 900;
+      display: flex; flex-direction: column;
+      transform: translateX(-50%) translateY(100%);
+      transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+      overflow: hidden;
+    }
+    /* JS owns all transforms on #van-sheet — the .open class is a state marker only */
+
+    /* X sits top-right, in the white margin above the mosaic */
+    #sheet-close {
+      position: absolute; right: 16px; top: 12px; z-index: 10;
+      width: 28px; height: 28px;
+      background: #f0f0f0; border: none; border-radius: 50%;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: #555;
+    }
+    #sheet-close:hover { background: #e0e0e0; }
+
+    /* Wrapper: just a width/margin container */
+    #gallery-wrap {
+      width: calc(100% - 40px);  /* 20px each side */
+      margin: 36px auto 8px;    /* 36px top clears the X button, 20px sides */
+    }
+    /* Mosaic gallery — clipping container for the sliding strip */
+    #sheet-gallery {
+      height: 320px;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;  /* anchor for the arrow buttons */
+    }
+    /* Sliding strip — all groups laid out horizontally, moved via translateX */
+    #sg-strip {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+    /* Each group fills the full gallery width — 1 big + 4 small in a 3-col grid */
+    .sg-group {
+      min-width: 100%;
+      flex-shrink: 0;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 6px;
+    }
+    /* Big photo: left column, full height */
+    .sg-ph-big {
+      grid-row: 1 / 3;
+      background-size: cover; background-position: center;
+      background-color: #e0e0e0;
+      cursor: pointer; transition: filter 0.12s;
+    }
+    /* Small photos: auto-fill remaining 4 grid cells */
+    .sg-ph-sm {
+      background-size: cover; background-position: center;
+      background-color: #e0e0e0;
+      cursor: pointer; transition: filter 0.12s;
+    }
+    .sg-ph-big:hover, .sg-ph-sm:hover { filter: brightness(0.86); }
+    .sg-ph-placeholder {
+      background: #f0f0f0; cursor: default;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── LIGHTBOX ── */
+    #lightbox {
+      position: fixed; inset: 0; z-index: 1100;
+      background: rgba(0,0,0,0.92);
+      display: none; align-items: center; justify-content: center;
+    }
+    #lightbox.open { display: flex; }
+    #lb-photo {
+      width: 100%; height: 100%;
+      background-size: contain; background-position: center; background-repeat: no-repeat;
+    }
+    #lb-close {
+      position: absolute; top: 14px; right: 14px;
+      width: 34px; height: 34px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); border: none;
+      color: #fff; font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #lb-close:hover { background: rgba(255,255,255,0.25); }
+    .lb-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); border: none;
+      color: #fff; font-size: 22px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .lb-nav:hover { background: rgba(255,255,255,0.28); }
+    #lb-prev { left: 14px; } #lb-next { right: 14px; }
+    #lb-count {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.7); font-size: 12px; font-weight: 500;
+    }
+
+    /* Single scrollable column — gallery + body content scroll together */
+    #sheet-scroll {
+      flex: 1; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #sheet-body {
+      padding: 16px 0 40px;
+    }
+    /* Text column: same centering as gallery but with a small inset each side */
+    #sheet-inner {
+      width: calc(100% - 40px);  /* matches gallery-wrap */
+      margin: 0 auto;
+      padding: 0 18px;           /* text sits slightly inside the gallery edges */
+    }
+    #sheet-name    { font-size: 22px; font-weight: 700; color: #111; line-height: 1.2; margin-bottom: 3px; }
+    #sheet-cuisine { font-size: 14px; color: #555; margin-bottom: 3px; }
+    #sheet-location {
+      font-size: 14px; color: #555; margin-bottom: 3px;
+      display: flex; align-items: flex-start; gap: 5px;
+    }
+    #sheet-status  { font-size: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 5px; }
+    #sheet-desc { font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 16px; border-top: 1px solid #f0f0f0; padding-top: 16px; margin-top: 4px; }
+    #sheet-website { font-size: 12px; margin-bottom: 6px; }
+    #sheet-website a { color: #555; text-decoration: none; }
+    #sheet-website a:hover { text-decoration: underline; }
+    .sheet-diet-tag {
+      font-size: 11px; font-weight: 600; padding: 3px 9px;
+      border-radius: 4px; border: 1px solid #ddd;
+      background: #f7f7f7; color: #555;
+    }
+
+    /* Schedule rows in sheet */
+    #sheet-sched { margin-bottom: 18px; }
+    .sh-sr {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 3px 10px; font-size: 13px;
+      padding: 7px 0;
+      align-items: baseline;
+    }
+    .sh-day, .sh-info { font-weight: 400; color: #555; }
+    .sh-sr.today .sh-day, .sh-sr.today .sh-info { font-weight: 400; color: #111; }
+    /* Schedule accordion */
+    #sched-expanded {
+      overflow: hidden; max-height: 0;
+      transition: max-height 0.3s ease;
+    }
+    #sched-toggle {
+      background: none; border: none; padding: 0; cursor: pointer;
+      font-size: 14px; color: #555; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    #sched-toggle svg { transition: transform 0.25s ease; flex-shrink: 0; }
+    #sched-toggle.open svg { transform: rotate(180deg); }
+
+    /* ── MAP ── */
+    #map-wrap { flex: 1; position: relative; min-width: 0; }
+    #map { width: 100%; height: 100%; }
+
+    /* ── PIN NAME TOOLTIP (reserved for future mobile use) ── */
+    #pin-tooltip {
+      position: absolute; z-index: 901;
+      background: #fff;
+      color: #111; font-size: 13px; font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+      pointer-events: none; /* never blocks map interaction */
+      display: none; white-space: nowrap;
+    }
+
+    /* ── MAP HOVER POPUP ── */
+    #map-popup {
+      position: absolute; z-index: 900;
+      width: 300px; background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      overflow: hidden; display: none; pointer-events: auto;
+      cursor: pointer;
+    }
+    #popup-photo {
+      position: relative;
+      width: 100%; height: 225px; /* 300×225 = 4:3 — standard camera/food photo ratio */
+      background-size: cover; background-position: center; background-color: #eee;
+    }
+    /* Compact popup when no photo is available */
+    #map-popup.no-photo #popup-photo { display: none; }
+    #map-popup.no-photo #popup-body  { padding-top: 14px; }
+    /* Photo navigation arrows — visible on hover when multiple photos exist */
+    .pp-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,0.88); border: none; border-radius: 50%;
+      width: 28px; height: 28px; padding: 0;
+      display: none; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 18px; line-height: 1; color: #111; z-index: 2;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.22);
+    }
+    #popup-photo:hover .pp-nav.pp-visible { display: flex; }
+    .pp-prev { left: 8px; }
+    .pp-next { right: 8px; }
+    #pp-count {
+      position: absolute; bottom: 7px; right: 9px;
+      background: rgba(0,0,0,0.52); color: #fff;
+      font-size: 11px; font-weight: 500; padding: 2px 7px;
+      border-radius: 10px; display: none;
+    }
+    #popup-photo:hover #pp-count.pp-visible { display: block; }
+    #popup-body { padding: 12px 14px 14px; }
+    #popup-name { font-size: 14px; font-weight: 700; color: #111; line-height: 1.3; }
+    #popup-cuis { font-size: 13px; color: #555; margin-top: 2px; }
+    #popup-loc  {
+      font-size: 13px; color: #555; margin-top: 1px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #popup-status { margin-top: 5px; font-size: 13px; }
+
+    /* ── PINS ── */
+    .fvm-pin {
+      position: relative; display: inline-block;
+      cursor: pointer; user-select: none;
+      transition: transform 0.08s ease-out, opacity 0.15s ease-out;
+    }
+    .fvm-pin:hover, .fvm-pin.hov { transform: scale(1.2); }
+    .fvm-pin.sel                 { transform: scale(1.2); }
+    .fvm-pin.dimmed              { opacity: 0.3; }
+    /* While a popup is open, freeze all non-active pins — no hover, no pointer events */
+    #map-wrap.popup-active .fvm-pin:not(.hov) { pointer-events: none; }
+    .pin-body { fill: #00b4d8; }
+
+    /* ── Popup icon links (Instagram, Website) ── */
+    #popup-links { display: flex; gap: 8px; margin-top: 10px; }
+    .pop-icon-link {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid #e0e0e0; color: #555; text-decoration: none;
+      flex-shrink: 0;
+    }
+    .pop-icon-link:hover { background: #f5f5f5; border-color: #bbb; color: #111; }
+    /* ── Bottom sheet hidden for now ── */
+    #van-sheet, #sheet-overlay { display: none !important; }
+    .pin-label {
+      position: absolute; left: 26px; top: 5px; white-space: nowrap; cursor: pointer;
+      font-size: 13px; font-weight: 400; color: #222; letter-spacing: -0.1px;
+      -webkit-font-smoothing: antialiased;
+      text-shadow:
+        -2px -2px 0 #fff,  2px -2px 0 #fff,
+        -2px  2px 0 #fff,  2px  2px 0 #fff,
+        -2px  0   0 #fff,  2px  0   0 #fff,
+         0   -2px 0 #fff,  0    2px 0 #fff,
+         0 0 8px #fff, 0 0 14px rgba(255,255,255,0.9);
+      transition: opacity 0.2s ease;
+    }
+    .pin-label.lbl-hidden { opacity: 0; pointer-events: none; }
+
+    /* ── LEAFLET ── */
+    .leaflet-control-zoom { border: none !important; }
+    .leaflet-control-zoom a {
+      border-radius: 6px !important; border: 1px solid #d0d0d0 !important;
+      color: #111 !important; font-size: 16px !important;
+      width: 32px !important; height: 32px !important; line-height: 30px !important;
+      margin-bottom: 4px !important; background: #fff !important;
+    }
+    .leaflet-control-zoom a:hover { background: #f5f5f5 !important; }
+    .leaflet-control-attribution { font-size: 10px !important; }
+    .leaflet-popup-content-wrapper { display: none; }
+    .locate-btn {
+      background: #fff !important; border: 1px solid #d0d0d0 !important;
+      border-radius: 6px !important;
+      width: 32px !important; height: 32px !important;
+      display: flex !important; align-items: center !important;
+      justify-content: center !important; cursor: pointer !important;
+    }
+    .locate-btn:hover { background: #f5f5f5 !important; }
+
+    /* Demo size picker */
+
+  </style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<div id="header">
+  <div class="hd-left">
+    <div class="logo-mark">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Bowl with steam — street food symbol -->
+        <path d="M4 11h16a8 8 0 0 1-16 0z"/>
+        <path d="M12 2c0 0-2 1.5-2 3s2 2 2 3.5"/>
+        <path d="M8 2c0 0-1.5 1.5-1.5 3S8 7 8 8.5"/>
+        <path d="M16 2c0 0-1.5 1.5-1.5 3S16 7 16 8.5"/>
+        <line x1="6" y1="19" x2="18" y2="19"/>
+      </svg>
+    </div>
+    <span class="logo-text">local street food</span>
+    <span class="beta-pill">beta</span>
+  </div>
+
+  <div id="search-wrap">
+    <div id="search-row">
+      <svg class="si-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/>
+      </svg>
+      <input id="search-input" type="text"
+             placeholder="Search traders, cuisines, areas…"
+             autocomplete="off" role="combobox"
+             aria-expanded="false" aria-haspopup="listbox"/>
+    </div>
+    <div id="search-drop" hidden role="listbox"></div>
+  </div>
+
+  <div class="hd-right">
+    <button id="add-btn" onclick="addYourVan()">+ Add your listing</button>
+  </div>
+</div>
+
+<!-- SVG filter definitions shared by all pins -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <defs>
+    <filter id="pin-shadow" x="-40%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+</svg>
+
+<!-- ══ MAIN ══ -->
+<div id="main">
+
+  <!-- ══ MAP (fills full #main area) ══ -->
+  <div id="map-wrap">
+    <div id="map"></div>
+
+
+    <!-- Demo: card size picker -->
+
+    <!-- Name tooltip — reserved for mobile/touch use -->
+    <div id="pin-tooltip"></div>
+
+    <div id="map-popup">
+      <div id="popup-photo">
+        <button class="pp-nav pp-prev" onclick="ppStep(-1,event)" aria-label="Previous photo">&#8249;</button>
+        <button class="pp-nav pp-next" onclick="ppStep(1,event)"  aria-label="Next photo">&#8250;</button>
+        <div id="pp-count"></div>
+      </div>
+      <div id="popup-body">
+        <div id="popup-name"></div>
+        <div id="popup-cuis"></div>
+        <div id="popup-loc"></div>
+        <div id="popup-status"></div>
+        <div id="popup-links"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- ══ BOTTOM SHEET ══ -->
+<div id="sheet-overlay" onclick="closeSheet()"></div>
+<div id="van-sheet" role="dialog" aria-modal="true">
+  <!-- X sits in the white margin above the mosaic -->
+  <button id="sheet-close" onclick="closeSheet()" aria-label="Close">
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <path d="M1 1l12 12M13 1L1 13"/>
+    </svg>
+  </button>
+  <div id="sheet-scroll">
+    <div id="gallery-wrap">
+      <div id="sheet-gallery">
+        <div id="sg-strip"></div>
+        <button class="gal-arrow" id="gal-prev" onclick="galPageStep(-1,event)" aria-label="Previous photos" style="display:none">&#8249;</button>
+        <button class="gal-arrow" id="gal-next" onclick="galPageStep(1,event)"  aria-label="More photos"     style="display:none">&#8250;</button>
+      </div>
+    </div>
+    <div id="sheet-body">
+      <div id="sheet-inner">
+        <div id="sheet-name"></div>
+        <div id="sheet-website"></div>
+        <div id="sheet-cuisine"></div>
+        <div id="sheet-location"></div>
+        <div id="sheet-status" class="vi-status"></div>
+        <div id="sheet-sched"></div>
+        <div id="sheet-desc"></div>
+        <div id="sheet-instagram"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LIGHTBOX ══ -->
+<div id="lightbox">
+  <div id="lb-photo"></div>
+  <button id="lb-close" onclick="closeLightbox()" aria-label="Close">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M1 1l12 12M13 1L1 13"/></svg>
+  </button>
+  <button class="lb-nav" id="lb-prev" onclick="lbStep(-1)" aria-label="Previous">&#8249;</button>
+  <button class="lb-nav" id="lb-next" onclick="lbStep(1)" aria-label="Next">&#8250;</button>
+  <div id="lb-count"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ════════════════════════════════════════════════════════
+//  DATA
+// ════════════════════════════════════════════════════════
+const VANS = [
+  {
+    id:1, name:"Son of a Bun", cuisine:"Fried Chicken & Burgers",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/04111234-3d28-4c79-a37a-8754516f416d/6V2rRBI_09/Feast_It_son-of-a-bun-CZ876tWIhI.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/04111234-3d28-4c79-a37a-8754516f416d/6V2rRBI_09/Feast_It_son-of-a-bun-CZ876tWIhI.jpg",
+      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1594212699903-ec8a3eca50f5?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1571091718767-18b5b1457add?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1553979459-d12b69fa6d48?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1607013251379-e6eecfffe234?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1550547660-25b87bbb4e09?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1587736241-f353f531e573?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1617196034183-421b4040d20d?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Bath", county:"Somerset",
+    schedule:[
+      { location:"Guildhall Market, Bath",  area:"Bath",          days:["Friday","Saturday"], hours:"11:00 - 16:00", lat:51.3811, lng:-2.3590, postcode:"BA1 1LN" },
+      { location:"Wapping Wharf, Bristol",  area:"Wapping Wharf", days:["Sunday"],       hours:"11:00 - 15:00", lat:51.4476, lng:-2.6043, postcode:"BS1 6UD" }
+    ],
+    instagram: null,
+    desc:"Born from a passion for fried chicken with an extensive background in street food, we aim to bring you the crispiest, juiciest, most succulent burgers in the west.",
+    dietary:["gf","halal","vegan","vegetarian"]
+  },
+  {
+    id:2, name:"Dookies Grill", cuisine:"Afro-Caribbean BBQ",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/f38108df-e99b-476b-aed3-3c325956e6e1/BFY0sgALkx/Feast_It_dookies-grill-3AhYZPkLQ-.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/f38108df-e99b-476b-aed3-3c325956e6e1/BFY0sgALkx/Feast_It_dookies-grill-3AhYZPkLQ-.jpg",
+      "https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1544025162-d76538b2a681?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Brockley", county:"Greater London",
+    schedule:[
+      { location:"Brockley Market, SE4",      area:"Brockley",   days:["Saturday"], hours:"10:00 - 14:00", lat:51.4665, lng:-0.0363, postcode:"SE4 1UT" },
+      { location:"Maltby Street Market, SE1", area:"Bermondsey", days:["Sunday"], hours:"09:00 - 15:00",  lat:51.5026, lng:-0.0793, postcode:"SE1 3PA" }
+    ],
+    instagram: null,
+    desc:"Specialists in modern and exciting British and Caribbean dishes. Flame-grilled food and memorable catering experiences for more than 7 years.",
+    dietary:["gf","halal","vegan","vegetarian"]
+  },
+  {
+    id:3, name:"AROMA Grill", cuisine:"Brazilian Steak & Chips",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/1bf9ff69-1177-4a23-8000-051ebf6ee18e/nP-PzNo-Ca/Feast_It_aroma-brazilian-food-3QRzH_f0XV.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/1bf9ff69-1177-4a23-8000-051ebf6ee18e/nP-PzNo-Ca/Feast_It_aroma-brazilian-food-3QRzH_f0XV.jpg",
+      "https://images.unsplash.com/photo-1600891964092-4316c288032e?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1546833999-55a55ef2db37?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1432139555-ea57c69b8a4a?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Shoreditch", county:"Greater London",
+    schedule:[
+      { location:"Dinerama, Shoreditch",    area:"Shoreditch",   days:["Thursday","Friday","Saturday"], hours:"12:00 - 23:00", lat:51.5246, lng:-0.0776, postcode:"EC2A 3JL" },
+      { location:"Spitalfields Market, E1", area:"Spitalfields", days:["Wednesday"],             hours:"11:00 - 16:00",  lat:51.5196, lng:-0.0761, postcode:"E1 6EW" }
+    ],
+    instagram: null,
+    desc:"AROMA specialises in PICANHA steak — a South American cut more tender and juicy than sirloin, using only locally sourced meat. Cooked to order right in front of you.",
+    dietary:["gf","vegetarian"]
+  },
+  {
+    id:4, name:"Queen of the Crepes", cuisine:"Sweet & Savoury Crepes",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/9add8b0f-0068-4b93-a96a-84e4a711e550/0KZur8rpLU/Feast_It_queen-of-the-crepes-A5NWlLl9JL.jpeg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/9add8b0f-0068-4b93-a96a-84e4a711e550/0KZur8rpLU/Feast_It_queen-of-the-crepes-A5NWlLl9JL.jpeg",
+      "https://images.unsplash.com/photo-1519676867240-f03562e64548?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1528207776546-365bb710ee93?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1470124182917-cc6e71b22ecc?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Bermondsey", county:"Greater London",
+    schedule:[
+      { location:"Maltby Street Market, SE1", area:"Bermondsey",    days:["Saturday"], hours:"09:00 - 16:00", lat:51.5026, lng:-0.0793, postcode:"SE1 3PA" },
+      { location:"Columbia Road Market, E2",  area:"Bethnal Green", days:["Sunday"], hours:"09:00 - 15:00", lat:51.5276, lng:-0.0714, postcode:"E2 7RG" }
+    ],
+    instagram: null,
+    desc:"Sweet and savoury crepes tailored to gluten-free and vegan preferences, served with teas and coffees from their vibrant catering trailer.",
+    dietary:["gf","vegan","vegetarian"]
+  },
+  {
+    id:5, name:"Basement 17", cuisine:"Mexican Fire Cooking",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/e962dae4-77d2-443e-923f-c8db11948d73/YmXJXJvkIf/Feast_It_basement-17-yNr3-V8KcF.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/e962dae4-77d2-443e-923f-c8db11948d73/YmXJXJvkIf/Feast_It_basement-17-yNr3-V8KcF.jpg",
+      "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1599974579688-8dbdd335c77f?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1570461226-ba3a85abc5bc?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1626700051-4f97bab08c4d?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Bristol City Centre", county:"Bristol",
+    schedule:[
+      { location:"St Nicholas Market, Bristol", area:"Bristol City Centre", days:["Wednesday","Thursday"], hours:"11:00 - 15:00", lat:51.4541, lng:-2.5940, postcode:"BS1 1JQ" },
+      { location:"Wapping Wharf, Bristol",      area:"Wapping Wharf",       days:["Friday","Saturday"], hours:"11:00 - 17:00", lat:51.4476, lng:-2.6043, postcode:"BS1 6UD" }
+    ],
+    instagram: null,
+    desc:"Forged in a Bristol basement during lockdown. Started with tacos for the neighbours every Wednesday and evolved into fire cooking at its finest.",
+    dietary:["gf","vegan","vegetarian"]
+  },
+  {
+    id:6, name:"Azahar", cuisine:"Spanish",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/8930c1e0-0285-11e8-b5b4-9de5cf7953c5/SkCb8KdBG/Feast-It-Azahar-Spanish-Food-Hire-Mobile-Catering-Event-Street-Food-Book-Now.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/8930c1e0-0285-11e8-b5b4-9de5cf7953c5/SkCb8KdBG/Feast-It-Azahar-Spanish-Food-Hire-Mobile-Catering-Event-Street-Food-Book-Now.jpg",
+      "https://images.unsplash.com/photo-1515443961218-a51367888e4b?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1533622597524-a1215e26c0a2?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1559410545-0bdcd187e0a6?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Cambridge", county:"Cambridgeshire",
+    schedule:[
+      { location:"Market Square, Cambridge", area:"Cambridge", days:["Wednesday","Thursday","Friday"], hours:"10:00 - 17:00", lat:52.2054, lng:0.1218, postcode:"CB2 3QJ" },
+      { location:"Ely Market, Ely",          area:"Ely",       days:["Saturday"],             hours:"09:00 - 16:00",  lat:52.3989, lng:0.2650, postcode:"CB7 4NP" }
+    ],
+    instagram: null,
+    desc:"An independent Spanish-English family business with 20+ years in food. Bocatas from a beautiful converted Citroën H Van, and proper paella cooked right in front of you.",
+    dietary:["gf","vegetarian"]
+  },
+  {
+    id:7, name:"Cyprus Kitchen", cuisine:"Eastern Mediterranean",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/6ec784ae-77ca-4148-9341-bf78e9561618/66TDHxDcQT/Feast_It_cyprus-kitchen-LS2CGCI2i3.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/6ec784ae-77ca-4148-9341-bf78e9561618/66TDHxDcQT/Feast_It_cyprus-kitchen-LS2CGCI2i3.jpg",
+      "https://images.unsplash.com/photo-1540914124281-342587941389?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1577906096429-f73c2c312435?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Southville", county:"Bristol",
+    schedule:[
+      { location:"St Nicholas Market, Bristol",     area:"Bristol City Centre", days:["Thursday"], hours:"11:00 - 15:00", lat:51.4541, lng:-2.5940, postcode:"BS1 1JQ" },
+      { location:"Tobacco Factory Market, Bristol", area:"Southville",          days:["Sunday"], hours:"10:00 - 14:00", lat:51.4440, lng:-2.6086, postcode:"BS3 1TF" }
+    ],
+    instagram: null,
+    desc:"Inspired by the family gatherings of childhood — sizzle of grilled meats, soft warm breads and crisp salads. Each dish a traditional Cypriot recipe passed down through generations.",
+    dietary:["gf","halal","vegan","vegetarian"]
+  },
+  {
+    id:8, name:"Nanny Bill's Burgers", cuisine:"Burgers",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/c9aa87a7-076d-44d8-87d3-e6959aa71706/nyfTCzVutL/Feast_It_nanny-bills-fsFZ8XW_Jw.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/c9aa87a7-076d-44d8-87d3-e6959aa71706/nyfTCzVutL/Feast_It_nanny-bills-fsFZ8XW_Jw.jpg",
+      "https://images.unsplash.com/photo-1596662951482-0be4199d2d75?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1615361200141-f45040f367be?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Northern Quarter", county:"Greater Manchester",
+    schedule:[
+      { location:"Northern Quarter, Manchester", area:"Northern Quarter", days:["Thursday","Friday"], hours:"11:00 - 17:00", lat:53.4839, lng:-2.2340, postcode:"M4 1HN" },
+      { location:"Altrincham Market",            area:"Altrincham",       days:["Saturday","Sunday"], hours:"10:00 - 16:00", lat:53.3879, lng:-2.3534, postcode:"WA14 1SA" }
+    ],
+    instagram: null,
+    desc:"Named in homage to their Nan and the café she ran in the '70s & '80s. Hand-pressed beef burgers — order the gravy-dipped one immediately.",
+    dietary:["halal","vegan","vegetarian"]
+  },
+  {
+    id:9, name:"Crosstown", cuisine:"Sourdough Doughnuts",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/8283b05a-f4f4-4c55-aaa0-da4b7a96391c/euax5M1NzL/Feast_It_crosstown-doughnuts-uNw9lOjF4z.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/8283b05a-f4f4-4c55-aaa0-da4b7a96391c/euax5M1NzL/Feast_It_crosstown-doughnuts-uNw9lOjF4z.jpg",
+      "https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1569050467-452914ec7e24?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1528975604-b87e3e5f1fc8?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1608198093-d0d67af8fcdb?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1567620905-42db4fb7b0c7?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1624968756513-47e8b3c0b8f5?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Hackney", county:"Greater London",
+    schedule:[
+      { location:"Borough Market, SE1",  area:"Borough", days:["Wednesday","Thursday"], hours:"10:00 - 17:00", lat:51.5055, lng:-0.0910, postcode:"SE1 9AL" },
+      { location:"Broadway Market, E8",  area:"Hackney", days:["Saturday"],       hours:"09:00 - 17:00",  lat:51.5380, lng:-0.0553, postcode:"E8 4QJ" }
+    ],
+    instagram: null, website:"https://crosstowndoughnuts.com",
+    desc:"An independent London scratch bakery. Housemade jams, glazes, creams and toppings on artisan sourdough doughnuts, plus handcrafted cookies and small-batch ice cream.",
+    dietary:["vegan","vegetarian"]
+  },
+  {
+    id:10, name:"Wanderers Kneaded", cuisine:"Wood-Fired Pizza",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/1dade626-2955-4b20-9104-2f42ccee6cdf/bRjIn_PQJd/Feast_It_wanderers-kneaded-limited-pYvAvPfQTb.jpeg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/1dade626-2955-4b20-9104-2f42ccee6cdf/bRjIn_PQJd/Feast_It_wanderers-kneaded-limited-pYvAvPfQTb.jpeg",
+      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1595854341-2639d42cd578?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1585238342-e5f3ab49b7b2?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1548340748-6d2b7d7da9d5?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Old Town", county:"Edinburgh",
+    schedule:[
+      { location:"Grassmarket, Edinburgh",        area:"Old Town",    days:["Friday","Saturday"], hours:"12:00 - 22:00", lat:55.9468, lng:-3.1918, postcode:"EH1 2JP" },
+      { location:"Stockbridge Market, Edinburgh", area:"Stockbridge", days:["Sunday"],       hours:"10:00 - 17:00",  lat:55.9578, lng:-3.2067, postcode:"EH4 1QS" }
+    ],
+    instagram: null,
+    desc:"Award-winning wood-fired pizza van serving Edinburgh. Dough made fresh from scratch — authentic Neapolitan pizzas that'll have everyone coming back for more.",
+    dietary:["vegan","vegetarian"]
+  },
+  {
+    id:11, name:"Oh My Dog!", cuisine:"Hot Dogs",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/19bb4504-027c-4ead-905f-bf97ad2ce2be/WbN6vBBAka/Feast_It_oh-my-dog-eAyehXe-Aa.png",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/19bb4504-027c-4ead-905f-bf97ad2ce2be/WbN6vBBAka/Feast_It_oh-my-dog-eAyehXe-Aa.png",
+      "https://images.unsplash.com/photo-1619740455993-9d8a66d94f7e?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1448043552756-e747b7a2b2b8?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1583745539936-263d70cddd41?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Camden", county:"Greater London",
+    schedule:[
+      { location:"Camden Market, NW1",    area:"Camden",           days:["Wednesday","Thursday","Friday"], hours:"10:00 - 19:00", lat:51.5420, lng:-0.1479, postcode:"NW1 8AF" },
+      { location:"Alexandra Palace, N22", area:"Alexandra Palace", days:["Saturday","Sunday"],       hours:"10:00 - 18:00", lat:51.5945, lng:-0.1288, postcode:"N22 7AY" }
+    ],
+    instagram: null,
+    desc:"'London's hottest dogs!' — Timeout. Dishing up dogs since the early days of the street food boom in 2013.",
+    dietary:["gf","halal","vegan","vegetarian"]
+  },
+  {
+    id:12, name:"The Hogless Roast", cuisine:"Plant-Based",
+    photo:"https://d32nt98g3gjlwu.cloudfront.net/fb325331-1f44-4b4b-8c67-6d8edda6496f/OlPj69u2Lu/Feast_It_the-hogless-roast-0mWJMHipeR.jpg",
+    photos:[
+      "https://d32nt98g3gjlwu.cloudfront.net/fb325331-1f44-4b4b-8c67-6d8edda6496f/OlPj69u2Lu/Feast_It_the-hogless-roast-0mWJMHipeR.jpg",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1540189549336-e6e99eb4b951?auto=format&w=600&h=450&fit=crop",
+      "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&w=600&h=450&fit=crop"
+    ],
+    area:"Leeds City Centre", county:"West Yorkshire",
+    schedule:[
+      { location:"Kirkgate Market, Leeds", area:"Leeds City Centre", days:["Thursday","Friday"], hours:"11:00 - 17:00", lat:53.7974, lng:-1.5416, postcode:"LS2 7HJ" },
+      { location:"Otley Market",           area:"Otley",             days:["Saturday"],       hours:"09:00 - 16:00",  lat:53.9024, lng:-1.6895, postcode:"LS21 3AA" }
+    ],
+    instagram: null,
+    desc:"Winners of Best Vegan Menu at the British Takeaway Awards. Life-changing 100% plant-based burgers and hog roast — convincing even the most dedicated carnivore.",
+    dietary:["gf","halal","vegan","vegetarian"]
+  }
+];
+
+// ════════════════════════
+//  STATE
+// ════════════════════════
+const ALL_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const jsDay    = new Date().getDay();
+const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
+const TODAY    = ALL_DAYS[todayIdx];          // e.g. "Friday" — fixed for the session
+let selectedVan  = null;
+let markerMap    = {};
+let nearLabel    = null;
+let _progMove    = false;
+let _userMarker  = null;
+let galPhotos   = [];
+let galIdx      = 0;
+let galPage     = 0;  // which group is currently visible (0-based)
+
+// ════════════════════════
+//  PHOTO HELPER
+//  If the URL is Cloudinary, auto-apply smart crop (g_auto).
+//  All other hosts pass through unchanged.
+// ════════════════════════
+function photoUrl(url, w=320, h=320) {
+  if (!url) return "";
+  if (url.includes("res.cloudinary.com")) {
+    return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
+  }
+  return url;
+}
+
+// ════════════════════════
+//  TIME HELPERS
+// ════════════════════════
+function parseHr(s) {
+  s = (s || "").trim();
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) return parseInt(m24[1]) + parseInt(m24[2]) / 60;
+  const m12 = s.match(/^(\d+)(am|pm)$/i);
+  if (!m12) return null;
+  let h = parseInt(m12[1]);
+  if (m12[2].toLowerCase() === "pm" && h !== 12) h += 12;
+  if (m12[2].toLowerCase() === "am" && h === 12) h = 0;
+  return h;
+}
+
+function parseMins(s) {
+  const h = parseHr((s || "").trim());
+  return h !== null ? Math.round(h * 60) : null;
+}
+
+function getDayLabel(day) {
+  const diff = ((ALL_DAYS.indexOf(day) - ALL_DAYS.indexOf(TODAY)) + 7) % 7;
+  if (diff === 1) return "Tomorrow";
+  return day;
+}
+
+function nextSlot(van, fromDay) {
+  const idx = ALL_DAYS.indexOf(fromDay);
+  for (let i = 1; i <= 7; i++) {
+    const d = ALL_DAYS[(idx + i) % 7];
+    const e = van.schedule.find(s => s.days.includes(d));
+    if (e) return { day: d, entry: e };
+  }
+  return null;
+}
+
+// ════════════════════════
+//  STATUS ENGINE
+// Returns { state, label, entry }
+// state: "open" | "closing-soon" | "upcoming" | "future" | "none"
+// ════════════════════════
+function getVanStatus(van) {
+  const now     = new Date();
+  const curMins = now.getHours() * 60 + now.getMinutes();
+
+  const todayEntry = van.schedule.find(s => s.days.includes(TODAY));
+
+  if (todayEntry) {
+    const parts    = (todayEntry.hours || "").split(" - ");
+    const openMins = parseMins(parts[0]);
+    const closeMins= parseMins(parts[1]);
+
+    if (openMins !== null && closeMins !== null) {
+      if (curMins < openMins) {
+        return { state:"upcoming", label:`<span class="vi-key">Closed</span> · Opens ${parts[0]}`, entry:todayEntry };
+      }
+      if (curMins >= closeMins) {
+        // Done for today — find next slot
+        const next = nextSlot(van, TODAY);
+        if (!next) return { state:"none", label:"Closed", entry:null };
+        const dl = getDayLabel(next.day);
+        const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
+        return { state:"future", label:`<span class="vi-key">Closed</span> · Opens ${dlc} ${next.entry.hours.split(" - ")[0]}`, entry:next.entry };
+      }
+      // Currently open
+      const minsLeft = closeMins - curMins;
+      if (minsLeft <= 30) {
+        return { state:"closing-soon", label:`<span class="vi-key">Closes in ${minsLeft} min${minsLeft === 1 ? "" : "s"}</span>`, entry:todayEntry };
+      }
+      return { state:"open", label:`<span class="vi-key">Open</span> · Closes ${parts[1]}`, entry:todayEntry };
+    }
+    // Hours unparseable — treat as open
+    return { state:"open", label:`<span class="vi-key">Open</span>`, entry:todayEntry };
+  }
+
+  // Not operating today — find next slot
+  const next = nextSlot(van, TODAY);
+  if (!next) return { state:"none", label:"Closed", entry:null };
+  const dl = getDayLabel(next.day);
+  const dlc = dl === "Tomorrow" ? "tomorrow" : dl;
+  return { state:"future", label:`<span class="vi-key">Closed</span> · Opens ${dlc} ${next.entry.hours.split(" - ")[0]}`, entry:next.entry };
+}
+
+// ════════════════════════
+//  MAP HOVER POPUP
+// ════════════════════════
+let _popupHideTimer = null;
+let _popupVan = null;
+let _hoverTimer = null;
+let _popupLocked = false;
+
+function showMapPopup(van) {
+  _popupVan = van;
+  const mapEl  = document.getElementById("map");
+  const status = getVanStatus(van);
+  const entry  = status.entry || van.schedule[0];
+  if (!entry) return;
+
+  const marker = markerMap[van.id];
+  const pinLL  = marker ? marker.getLatLng() : [entry.lat, entry.lng];
+  const pt     = map.latLngToContainerPoint(pinLL);
+  const mapW   = mapEl.offsetWidth;
+  const mapH   = mapEl.offsetHeight;
+
+  // ── Rich popup with photo navigation ──
+  const popup = document.getElementById("map-popup");
+  _ppPhotos = van.photos || (van.photo ? [van.photo] : []);
+  const hasPhoto = _ppPhotos.length > 0;
+  popup.classList.toggle("no-photo", !hasPhoto);
+  if (hasPhoto) { ppShowPhoto(0); preloadPopupPhotos(_ppPhotos); }
+  document.getElementById("popup-name").textContent = van.name;
+  document.getElementById("popup-cuis").textContent = van.cuisine;
+  const locEl = document.getElementById("popup-loc");
+  locEl.textContent   = entry.location || "";
+  locEl.style.display = entry.location ? "block" : "none";
+  const stEl = document.getElementById("popup-status");
+  stEl.innerHTML  = status.label;
+  stEl.className  = `vi-status ${status.state}`;
+  const igSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>`;
+  const webSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+  const links = [
+    van.instagram ? `<a class="pop-icon-link" href="https://instagram.com/${van.instagram.replace(/^@/,'')}" target="_blank" rel="noopener" title="Instagram">${igSvg}</a>` : '',
+    van.website   ? `<a class="pop-icon-link" href="${van.website.startsWith('http') ? van.website : 'https://'+van.website}" target="_blank" rel="noopener" title="Website">${webSvg}</a>` : '',
+  ].filter(Boolean).join('');
+  document.getElementById("popup-links").innerHTML = links;
+
+  // Position above the actual rendered marker (use marker's lat/lng, not entry's,
+  // so jittered overlapping pins position correctly too)
+  popup.style.display = "block";
+  const popW = popup.offsetWidth;
+  const popH = popup.offsetHeight;
+
+  let left = pt.x - popW / 2;
+  let top  = pt.y - 39 - popH - 10;        // 39 = pin icon height above anchor
+  if (top < 8) top = pt.y + 14;             // fall below if too near top edge
+  left = Math.max(8, Math.min(left, mapW - popW - 8));
+  top  = Math.max(8, Math.min(top,  mapH - popH - 8));
+
+  popup.style.left = left + "px";
+  popup.style.top  = top  + "px";
+  document.getElementById("map-wrap").classList.add("popup-active");
+}
+
+// ── Popup photo navigation ──
+let _ppPhotos = [];
+let _ppIdx    = 0;
+
+function ppShowPhoto(idx) {
+  _ppIdx = idx;
+  const photo   = _ppPhotos[idx];
+  const photoEl = document.getElementById('popup-photo');
+  photoEl.style.backgroundImage = photo ? `url('${photoUrl(photo, 600, 450)}')` : 'none';
+  const multi = _ppPhotos.length > 1;
+  const countEl = document.getElementById('pp-count');
+  countEl.textContent = `${idx + 1} / ${_ppPhotos.length}`;
+  countEl.classList.toggle('pp-visible', multi);
+  photoEl.querySelector('.pp-prev').classList.toggle('pp-visible', multi && idx > 0);
+  photoEl.querySelector('.pp-next').classList.toggle('pp-visible', multi && idx < _ppPhotos.length - 1);
+}
+
+let _ppNavAt = 0; // timestamp of last nav click — used to block accidental sheet-open
+
+function ppStep(dir, e) {
+  e.stopPropagation();
+  _ppNavAt = Date.now();
+  ppShowPhoto(Math.max(0, Math.min(_ppPhotos.length - 1, _ppIdx + dir)));
+}
+
+// Kick off background fetches for photos 2..n so the browser cache is warm
+// by the time the user taps an arrow. Called on first pin hover.
+function preloadPopupPhotos(photos) {
+  for (let i = 1; i < photos.length; i++) {
+    new Image().src = photoUrl(photos[i], 600, 450);
+  }
+}
+
+function hideMapPopup() {
+  document.getElementById("map-popup").style.display = "none";
+  document.getElementById("pin-tooltip").style.display = "none";
+  document.getElementById("map-wrap").classList.remove("popup-active");
+  if (_popupVan) {
+    document.getElementById(`pin-${_popupVan.id}`)?.classList.remove("hov");
+  }
+  // Clear selected (enlarged) pin state
+  document.querySelectorAll(".fvm-pin.sel").forEach(p => p.classList.remove("sel"));
+  _activeCardId = null;
+  selectedVan   = null;
+  _popupLocked  = false;
+  _popupVan     = null;
+}
+
+function scheduleHideMapPopup() {
+  _popupHideTimer = setTimeout(hideMapPopup, 600);
+}
+
+function cancelHideMapPopup() {
+  clearTimeout(_popupHideTimer);
+}
+
+// Keep popup alive while the mouse is over it
+document.getElementById("map-popup").addEventListener("mouseenter", () => {
+  _popupLocked = true;
+  cancelHideMapPopup();
+});
+document.getElementById("map-popup").addEventListener("mouseleave", () => {
+  _popupLocked = false;
+  scheduleHideMapPopup();
+});
+
+// Popup click intentionally does nothing — card stays until map click dismisses it.
+
+const _vanZOffset   = {};   // van.id → stable random offset (0–149); persists across re-renders
+let   _activeCardId = null; // van.id of currently selected pin (drives .sel class)
+
+// ════════════════════════
+//  GALLERY — group-based mosaic strip
+// ════════════════════════
+// Each group shows 5 photos: 1 big (left column, full height) + 4 small (2×2 right side).
+// Groups slide via translateX — ‹ › advances one full group at a time.
+const GAL_PER_PAGE = 5;
+
+const PH_SVG_SM = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+const PH_SVG_LG = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+
+function renderGallery() {
+  const strip = document.getElementById("sg-strip");
+  if (!strip) return;
+
+  const total       = galPhotos.length;
+  const totalGroups = Math.max(1, Math.ceil(total / GAL_PER_PAGE));
+
+  let html = '';
+  for (let g = 0; g < totalGroups; g++) {
+    const s = g * GAL_PER_PAGE;
+    html += `<div class="sg-group">`;
+
+    // Big photo — left column, spans both rows
+    const main = galPhotos[s];
+    html += main
+      ? `<div class="sg-ph-big" onclick="openLightbox(${s})" style="background-image:url('${photoUrl(main,800,600)}')"></div>`
+      : `<div class="sg-ph-big sg-ph-placeholder">${PH_SVG_LG}</div>`;
+
+    // 4 small photos — fill the remaining 2×2 grid cells
+    for (let i = 1; i <= 4; i++) {
+      const p = galPhotos[s + i];
+      html += p
+        ? `<div class="sg-ph-sm" onclick="openLightbox(${s+i})" style="background-image:url('${photoUrl(p,400,300)}')"></div>`
+        : `<div class="sg-ph-sm sg-ph-placeholder">${PH_SVG_SM}</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  strip.innerHTML = html;
+  strip.style.transition = 'none';
+  strip.style.transform  = 'translateX(0)';
+  galPage = 0;
+  _galUpdateArrows(totalGroups);
+}
+
+function _galUpdateArrows(totalGroups) {
+  if (totalGroups === undefined) {
+    const strip = document.getElementById("sg-strip");
+    totalGroups = strip ? strip.children.length : 1;
+  }
+  document.getElementById("gal-prev").style.display = galPage > 0                ? "flex" : "none";
+  document.getElementById("gal-next").style.display = galPage < totalGroups - 1  ? "flex" : "none";
+}
+
+function galPageStep(dir, e) {
+  if (e) e.stopPropagation();
+  const strip = document.getElementById("sg-strip");
+  if (!strip) return;
+  const totalGroups = strip.children.length;
+  galPage = Math.max(0, Math.min(totalGroups - 1, galPage + dir));
+  strip.style.transition = 'transform 0.38s cubic-bezier(0.32, 0.72, 0, 1)';
+  strip.style.transform  = `translateX(-${galPage * 100}%)`;
+  _galUpdateArrows(totalGroups);
+}
+
+// ════════════════════════
+//  LIGHTBOX
+// ════════════════════════
+function openLightbox(idx) {
+  galIdx = idx;
+  document.getElementById("lightbox").classList.add("open");
+  updateLightbox();
+}
+
+function closeLightbox() {
+  document.getElementById("lightbox").classList.remove("open");
+}
+
+function lbStep(dir) {
+  galIdx = Math.max(0, Math.min(galPhotos.length - 1, galIdx + dir));
+  updateLightbox();
+}
+
+function updateLightbox() {
+  document.getElementById("lb-photo").style.backgroundImage =
+    galPhotos[galIdx] ? `url('${photoUrl(galPhotos[galIdx],1200,800)}')` : "none";
+  document.getElementById("lb-count").textContent =
+    galPhotos.length > 1 ? `${galIdx + 1} / ${galPhotos.length}` : "";
+  document.getElementById("lb-prev").style.display = galIdx > 0 ? "flex" : "none";
+  document.getElementById("lb-next").style.display = galIdx < galPhotos.length - 1 ? "flex" : "none";
+}
+
+// Close lightbox on overlay click (but not on nav buttons)
+document.getElementById("lightbox").addEventListener("click", e => {
+  if (e.target.id === "lightbox" || e.target.id === "lb-photo") closeLightbox();
+});
+
+// Keyboard nav for lightbox
+document.addEventListener("keydown", e => {
+  if (!document.getElementById("lightbox").classList.contains("open")) return;
+  if (e.key === "Escape")     { e.preventDefault(); closeLightbox(); }
+  if (e.key === "ArrowLeft")  { e.preventDefault(); lbStep(-1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); lbStep(1);  }
+});
+
+// ════════════════════════
+//  MAP
+// ════════════════════════
+const map = L.map("map", { center:[52.8, -1.8], zoom:6, zoomControl:false });
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains:"abcd", maxZoom:19
+}).addTo(map);
+L.control.zoom({ position:"topright" }).addTo(map);
+
+// ── Sheet height: align ceiling with the bottom of the top zoom button ──
+// Measured after Leaflet has painted (two rAFs to ensure layout is settled).
+function updateSheetHeight() {
+  const zoomIn  = document.querySelector('.leaflet-control-zoom-in');
+  const sheetEl = document.getElementById('van-sheet');
+  if (!zoomIn || !sheetEl) return;
+  const h = Math.max(300, Math.round(window.innerHeight - zoomIn.getBoundingClientRect().top - 8));
+  sheetEl.style.height = h + 'px';
+  // If sheet is already open, re-snap it to the correct transform for the new height
+  if (sheetState !== 'hidden') applySheetState(sheetState, false);
+}
+requestAnimationFrame(() => requestAnimationFrame(updateSheetHeight));
+window.addEventListener('resize', updateSheetHeight, { passive: true });
+
+// ── User location beacon ──
+function showUserBeacon(latlng) {
+  if (_userMarker) map.removeLayer(_userMarker);
+  const icon = L.divIcon({
+    className: "",
+    html: `<div class="user-beacon"><div class="user-beacon-ring"></div><div class="user-beacon-dot"></div></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+  _userMarker = L.marker(latlng, { icon, zIndexOffset: 600, interactive: false }).addTo(map);
+}
+
+// Locate button
+const LocateCtl = L.Control.extend({
+  options: { position:"topright" },
+  onAdd() {
+    const b = L.DomUtil.create("div","locate-btn leaflet-bar");
+    b.title = "Find me";
+    b.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round">
+      <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+      <circle cx="12" cy="12" r="8"/></svg>`;
+    L.DomEvent.on(b, "click", () => { nearLabel = null; _progMove = true; map.locate({ setView:true, maxZoom:14 }); });
+    return b;
+  }
+});
+new LocateCtl().addTo(map);
+
+map.on("locationfound", e => {
+  showUserBeacon(e.latlng);
+  fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}`)
+    .then(r => r.json())
+    .then(d => {
+      const a = d.address || {};
+      nearLabel = a.town || a.city || a.village || a.suburb || a.county || "you";
+      renderMarkers();
+    }).catch(() => { nearLabel = "you"; renderMarkers(); });
+});
+
+map.on("click", () => { _popupLocked = false; hideMapPopup(); hideSearch(); });
+
+map.on("moveend", () => {
+  if (_progMove) { _progMove = false; } else { nearLabel = null; }
+  renderMarkers();
+});
+
+// ════════════════════════
+//  PINS
+// ════════════════════════
+function makeSmallPinIcon(van) {
+  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-sm" id="pin-${van.id}"><svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle fill="#00b4d8" cx="8" cy="8" r="8"/><circle fill="white" cx="8" cy="8" r="3.5"/></svg></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+}
+function makeLargePinIcon(van) {
+  return L.divIcon({ className:"", html:`<div class="fvm-pin fvm-pin-lg" id="pin-${van.id}"><svg width="25" height="34" viewBox="0 0 22 30" style="overflow:visible" xmlns="http://www.w3.org/2000/svg"><g filter="url(#pin-shadow)"><circle fill="white" cx="11" cy="11" r="11"/><polygon fill="white" points="4,19 11,29 18,19"/><circle class="pin-body" cx="11" cy="11" r="8.5"/><g transform="translate(5,5) scale(0.5)" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g></g></svg><span class="pin-label">${van.name}</span></div>`, iconSize:[25,34], iconAnchor:[12,33] });
+}
+
+function renderMarkers() {
+  Object.values(markerMap).forEach(m => map.removeLayer(m));
+  markerMap = {};
+  const bounds = map.getBounds();
+
+  // Build (van, entry) list using the same stable entry logic as getVanStatus —
+  // today's slot if trading today, otherwise next upcoming slot. This prevents
+  // a vendor's pin jumping to a different location when a different schedule
+  // entry happens to scroll into the map bounds.
+  const toPlace = [];
+  VANS.forEach(van => {
+    const entry = getVanStatus(van).entry;
+    if (!entry || !bounds.contains([entry.lat, entry.lng])) return;
+    toPlace.push({ van, entry });
+  });
+
+  // Spread pins that share identical coordinates into a small circle (~15m radius)
+  // so stacked vendors (e.g. two vans at the same market) are both always visible
+  const posKey = e => `${e.lat.toFixed(4)},${e.lng.toFixed(4)}`;
+  const groups = {};
+  toPlace.forEach(item => {
+    const k = posKey(item.entry);
+    (groups[k] = groups[k] || []).push(item);
+  });
+  // Build stack-peer map: each van knows which other vans share its location
+  _stackPeers = {};
+  Object.values(groups).forEach(group => {
+    if (group.length < 2) return;
+    group.forEach(item => {
+      _stackPeers[item.van.id] = group.filter(g => g !== item).map(g => g.van.id);
+    });
+  });
+
+  const R = 0.00014; // ≈15m
+  Object.values(groups).forEach(group => {
+    if (group.length < 2) return;
+    group.forEach((item, i) => {
+      const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
+      item._lat = item.entry.lat + R * Math.cos(angle);
+      item._lng = item.entry.lng + R * Math.sin(angle) / Math.cos(item.entry.lat * Math.PI / 180);
+    });
+  });
+
+  toPlace.forEach(({ van, entry, _lat, _lng }) => {
+    const lat = _lat ?? entry.lat;
+    const lng = _lng ?? entry.lng;
+
+    const vanStatus = getVanStatus(van);
+    const isOpen = vanStatus.state === "open" || vanStatus.state === "closing-soon";
+    const zBase  = isOpen ? 200 : 0;
+    if (_vanZOffset[van.id] === undefined) _vanZOffset[van.id] = Math.floor(Math.random() * 150);
+    const zOrig  = zBase + _vanZOffset[van.id];
+    const m = L.marker([lat, lng], { icon: makeLargePinIcon(van), zIndexOffset: zOrig })
+      .addTo(map)
+      .on("click", e => {
+        L.DomEvent.stopPropagation(e);
+        hideMapPopup();
+        pinClickVan(van);
+      });
+    // Simple hover — show card on mouseenter, schedule hide on mouseleave
+    requestAnimationFrame(() => {
+      const pinEl = document.getElementById(`pin-${van.id}`);
+      if (!pinEl) return;
+      pinEl.addEventListener("mouseenter", () => {
+        clearTimeout(_hoverTimer);
+        cancelHideMapPopup();
+        if (_popupVan && _popupVan.id === van.id) return;
+        _hoverTimer = setTimeout(() => {
+          if (_popupLocked) return;
+          document.querySelectorAll(".fvm-pin.hov").forEach(p => p.classList.remove("hov"));
+          pinEl.classList.add("hov");
+          showMapPopup(van);
+        }, 200);
+      });
+      pinEl.addEventListener("mouseleave", () => {
+        clearTimeout(_hoverTimer);
+        document.querySelectorAll(".fvm-pin.hov").forEach(p => p.classList.remove("hov"));
+        scheduleHideMapPopup();
+      });
+    });
+    markerMap[van.id] = m;
+  });
+
+  // Re-apply selected highlight after re-render
+  if (selectedVan) {
+    const pin = document.getElementById(`pin-${selectedVan.id}`);
+    if (pin) pin.classList.add("sel");
+  }
+
+  // Update label visibility based on screen spacing
+  requestAnimationFrame(updatePinLabels);
+}
+
+
+// ════════════════════════
+//  PIN CLICK → highlight card in list
+// ════════════════════════
+function pinClickVan(van) {
+  selectedVan = van;
+  hideSearch();
+  document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
+  const pin = document.getElementById(`pin-${van.id}`);
+  if (pin) pin.classList.add("sel");
+  _activeCardId = van.id;
+  _popupLocked = true;
+  showMapPopup(van);
+}
+
+// ════════════════════════
+//  VAN DETAIL — bottom sheet
+// ════════════════════════
+
+function openSheet(van) {
+  // Gallery
+  galPhotos = van.photos || (van.photo ? [van.photo] : []);
+  galIdx    = 0;
+  galPage   = 0;
+  renderGallery();
+
+  // L1: Name
+  document.getElementById("sheet-name").textContent = van.name;
+
+  // L1b: Website (Bing-style, right under name)
+  const siteUrl = van.website ? van.website.replace(/^https?:\/\//, "") : "";
+  document.getElementById("sheet-website").innerHTML = siteUrl
+    ? `<a href="https://${siteUrl}" target="_blank" rel="noopener">${siteUrl}</a>`
+    : "";
+
+  // L2: Cuisine
+  document.getElementById("sheet-cuisine").textContent = van.cuisine;
+
+  // L3: Location
+  const status = getVanStatus(van);
+  const entry  = status.entry;
+  const fmtLoc = (loc, pc) => pc ? `${loc.replace(/,\s*[A-Z]{1,2}\d{1,2}$/, '')}, ${pc}` : loc;
+  document.getElementById("sheet-location").innerHTML = entry
+    ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${fmtLoc(entry.location, entry.postcode)}</span>`
+    : "";
+
+  // L4: Open/closed status
+  const statusEl = document.getElementById("sheet-status");
+  statusEl.className = `vi-status ${status.state}`;
+  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+  const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  statusEl.innerHTML = `${clockIcon}<span>${status.label} · <button id="sched-toggle" onclick="toggleSched()">Full week ${chevron}</button></span>`;
+
+  // L6: Description
+  document.getElementById("sheet-desc").textContent = van.desc || "";
+
+  // Instagram / menu link
+  const igEl = document.getElementById("sheet-instagram");
+  igEl.innerHTML = van.instagram
+    ? `<a class="ig-link" href="https://instagram.com/${van.instagram.replace(/^@/,'')}" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+        Menu &amp; updates
+       </a>`
+    : "";
+
+  // Schedule rows — hidden until toggle opened
+  // If all schedule entries share the same location, omit the location suffix (it never changes)
+  const uniqueLocs = new Set(van.schedule.map(e => fmtLoc(e.location, e.postcode)));
+  const isFixedLoc = uniqueLocs.size === 1;
+  function shRow(d) {
+    const e = van.schedule.find(s => s.days.includes(d));
+    const isToday = d === TODAY;
+    if (!e) return `<div class="sh-sr${isToday ? " today" : ""}"><span class="sh-day">${d}</span><span class="sh-info">Closed</span></div>`;
+    const locStr = fmtLoc(e.location, e.postcode);
+    const info   = isFixedLoc ? e.hours : `${e.hours} · ${locStr}`;
+    return `<div class="sh-sr${isToday ? " today" : ""}"><span class="sh-day">${d}</span><span class="sh-info">${info}</span></div>`;
+  }
+  const todayIdx = ALL_DAYS.indexOf(TODAY);
+  const orderedDays = [TODAY, ...ALL_DAYS.slice(todayIdx + 1), ...ALL_DAYS.slice(0, todayIdx)];
+  document.getElementById("sheet-sched").innerHTML = `<div id="sched-expanded">${orderedDays.map(shRow).join("")}</div>`;
+
+  document.getElementById("sheet-scroll").scrollTop = 0;
+  applySheetState('full');
+}
+
+function toggleSched() {
+  const exp = document.getElementById("sched-expanded");
+  const btn = document.getElementById("sched-toggle");
+  if (!exp || !btn) return;
+  const isOpen = btn.classList.contains("open");
+  exp.style.maxHeight = isOpen ? "0" : exp.scrollHeight + "px";
+  btn.classList.toggle("open", !isOpen);
+}
+
+// ════════════════════════
+//  BOTTOM SHEET STATE MACHINE  (hidden | full — no peek)
+// ════════════════════════
+let sheetState = 'hidden';
+
+function applySheetState(state, animate = true) {
+  const sheetEl   = document.getElementById('van-sheet');
+  const overlayEl = document.getElementById('sheet-overlay');
+  sheetState = state;
+  const h = sheetEl.offsetHeight || Math.round(window.innerHeight * 0.88);
+  sheetEl.style.transition = animate
+    ? 'transform 0.38s cubic-bezier(0.32, 0.72, 0, 1)' : 'none';
+  sheetEl.style.transform  = `translateX(-50%) translateY(${state === 'full' ? 0 : h}px)`;
+  overlayEl.classList.toggle('open', state === 'full');
+  sheetEl.classList.toggle('open', state !== 'hidden');
+}
+
+function selectVan(van) {
+  selectedVan = van;
+  _activeCardId = van.id;
+  hideSearch();
+  document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
+  const pin = document.getElementById(`pin-${van.id}`);
+  if (pin) pin.classList.add("sel");
+  openSheet(van);
+}
+
+function closeSheet() {
+  applySheetState('hidden');
+  document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
+  selectedVan = null;
+  _activeCardId = null;
+}
+
+function closeCard() {
+  if (sheetState !== 'hidden') closeSheet();
+}
+
+// ════════════════════════
+//  SEARCH
+// ════════════════════════
+const $si = document.getElementById("search-input");
+const $sd = document.getElementById("search-drop");
+let kbIdx = -1;
+const norm = s => (s || "").toLowerCase();
+
+function getVanResults(q) {
+  if (!q.trim()) return VANS.slice();
+  const lq = norm(q);
+  return VANS.filter(v =>
+    norm(v.name).includes(lq)    ||
+    norm(v.cuisine).includes(lq) ||
+    norm(v.area).includes(lq)    ||
+    norm(v.county).includes(lq)  ||
+    v.schedule.some(s => norm(s.location).includes(lq) || norm(s.area).includes(lq))
+  );
+}
+
+let _geoTimer = null;
+// Empty-state: Nearby row + area chips + cuisine chips
+// Chips call chipSearch(q) which fills the input and runs a search
+const SHORTCUTS_HTML = `
+<div class="dr" data-type="nearby" role="option">
+  <div class="dr-name">Nearby</div>
+  <div class="dr-sub">Find what's around you</div>
+</div>
+<div class="srch-shortcuts">
+  <div class="dr-section">Popular areas</div>
+  <div class="srch-chips">
+    ${['London','Edinburgh','Bristol','Bath','Glasgow','Oxford'].map(a =>
+      `<button class="srch-chip" onmousedown="event.preventDefault()" onclick="chipSearch('${a}')">${a}</button>`
+    ).join('')}
+  </div>
+  <div class="dr-section">Cuisines</div>
+  <div class="srch-chips">
+    ${['Pizza','Mexican','Korean','Burgers','BBQ','Crepes','Japanese'].map(c =>
+      `<button class="srch-chip" onmousedown="event.preventDefault()" onclick="chipSearch('${c}')">${c}</button>`
+    ).join('')}
+  </div>
+</div>`;
+
+function chipSearch(q) {
+  $si.value = q;
+  renderDrop(q);
+}
+
+function renderDrop(q) {
+  kbIdx = -1;
+  const vans = getVanResults(q);
+  const html = vans.map(v =>
+    `<div class="dr" data-type="van" data-id="${v.id}" role="option">
+      <div class="dr-name">${v.name}</div>
+      <div class="dr-sub">${v.cuisine} · ${v.area}</div>
+    </div>`
+  ).join("");
+
+  $sd.innerHTML = !q.trim()
+    ? SHORTCUTS_HTML
+    : ((html || "") + `<div id="geo-results"></div>`);
+
+  bindDropClicks();
+  $sd.hidden = false;
+  $si.setAttribute("aria-expanded","true");
+
+  clearTimeout(_geoTimer);
+  if (q.trim().length >= 2) {
+    _geoTimer = setTimeout(() => {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=gb&limit=3&addressdetails=1`)
+        .then(r => r.json())
+        .then(places => {
+          const $geo = document.getElementById("geo-results");
+          if (!$geo) return;
+          if (!places.length) { $geo.innerHTML = vans.length ? "" : `<div class="dr-none">No results for "${q}"</div>`; return; }
+          // Deduplicate by resolved display name — Nominatim often returns multiple
+          // entries for the same city (e.g. Bristol city + Bristol district)
+          const seenNames = new Set();
+          const uniquePlaces = places.filter(p => {
+            const n = p.address.city || p.address.town || p.address.village || p.address.county || p.display_name.split(",")[0];
+            if (seenNames.has(n)) return false;
+            seenNames.add(n);
+            return true;
+          });
+          const label = vans.length ? `<div class="dr-section">Places</div>` : "";
+          $geo.innerHTML = label + uniquePlaces.map(p => {
+            const name = p.address.city || p.address.town || p.address.village || p.address.county || p.display_name.split(",")[0];
+            const sub  = p.display_name.split(",").slice(1,3).join(",").trim();
+            return `<div class="dr" data-type="place" data-lat="${p.lat}" data-lng="${p.lon}" data-name="${name}" role="option">
+              <div class="dr-name">${name}</div>
+              <div class="dr-sub">${sub}</div>
+            </div>`;
+          }).join("");
+          bindDropClicks();
+        }).catch(() => {});
+    }, 300);
+  }
+}
+
+function bindDropClicks() {
+  $sd.querySelectorAll(".dr").forEach(el => {
+    el.addEventListener("mousedown", e => {
+      e.preventDefault();
+      if (el.dataset.type === "nearby") {
+        $si.value = ""; hideSearch();
+        nearLabel = null; _progMove = true;
+        map.locate({ setView: true, maxZoom: 14 });
+      } else if (el.dataset.type === "place") {
+        pickPlace(+el.dataset.lat, +el.dataset.lng, el.dataset.name);
+      } else {
+        pickResult(VANS.find(v => v.id === +el.dataset.id));
+      }
+    });
+  });
+}
+
+function pickPlace(lat, lng, name) {
+  $si.value = ""; hideSearch();
+  nearLabel = name; _progMove = true;
+  map.setView([lat, lng], 13, { animate:true });
+}
+
+function pickResult(van) {
+  if (!van) return;
+  $si.value = ""; hideSearch();
+  // Find best entry: today's if operating, else next slot
+  const status = getVanStatus(van);
+  const entry  = status.entry || van.schedule[0];
+  nearLabel = entry.area || null;
+  _progMove = true;
+  map.setView([entry.lat, entry.lng], 15, { animate:true });
+  // Small delay so the map pan completes before the sheet opens
+  setTimeout(() => pinClickVan(van), 300);
+}
+
+function hideSearch() {
+  $sd.hidden = true;
+  $si.setAttribute("aria-expanded","false");
+}
+
+$si.addEventListener("focus",   () => renderDrop($si.value));
+$si.addEventListener("input",   () => renderDrop($si.value));
+$si.addEventListener("blur",    () => setTimeout(hideSearch, 150));
+$si.addEventListener("keydown", e => {
+  const items = [...$sd.querySelectorAll(".dr")];
+  if (!items.length) return;
+  if      (e.key === "ArrowDown")           { e.preventDefault(); kbIdx = Math.min(kbIdx+1, items.length-1); }
+  else if (e.key === "ArrowUp")             { e.preventDefault(); kbIdx = Math.max(kbIdx-1, 0); }
+  else if (e.key === "Enter" && kbIdx >= 0) {
+    const el = items[kbIdx];
+    if (el.dataset.type === "nearby") {
+      $si.value = ""; hideSearch();
+      nearLabel = null; _progMove = true;
+      map.locate({ setView: true, maxZoom: 14 });
+    } else if (el.dataset.type === "place") {
+      pickPlace(+el.dataset.lat, +el.dataset.lng, el.dataset.name);
+    } else {
+      pickResult(VANS.find(v => v.id === +el.dataset.id));
+    }
+    return;
+  }
+  else if (e.key === "Escape") { hideSearch(); return; }
+  items.forEach((el,i) => el.classList.toggle("kact", i === kbIdx));
+});
+
+// ════════════════════════
+//  ADD YOUR VAN
+// ════════════════════════
+function addYourVan() {
+  const sub  = encodeURIComponent("Add my van to FoodVanMap");
+  const body = encodeURIComponent(
+    "Hi,\n\nI'd like to add my food van to foodvanmap.com.\n\n" +
+    "Van name:\nCuisine type:\nLocation + postcode:\nCounty:\n" +
+    "Days I operate:\nTrading hours per day:\nInstagram:\nWebsite:\nDescription (2 sentences):\n\nThanks!"
+  );
+  window.location.href = `mailto:walker.robert@outlook.com?subject=${sub}&body=${body}`;
+}
+
+// ════════════════════════
+//  INIT
+// ════════════════════════
+function updatePinLabels() {
+  const entries = Object.entries(markerMap);
+  if (!entries.length) return;
+
+  // Below zoom 14: hide all labels
+  if (map.getZoom() < 14) {
+    entries.forEach(([id]) => {
+      document.querySelector(`#pin-${id} .pin-label`)?.classList.add("lbl-hidden");
+    });
+    return;
+  }
+
+  // Convert every visible marker to screen coordinates
+  const pts = entries.map(([id, m]) => ({
+    id,
+    pt: map.latLngToContainerPoint(m.getLatLng())
+  }));
+
+  pts.forEach(({ id, pt }) => {
+    const label = document.querySelector(`#pin-${id} .pin-label`);
+    if (!label) return;
+
+    // If any other pin is within 20px in BOTH axes, pins are visually overlapping on
+    // screen — hide the label regardless of zoom (avoids text piling up on stacked pins).
+    // At high enough zoom the R-offset separates them beyond 20px and labels can show.
+    const tooClose = pts.some(other => {
+      if (other.id === id) return false;
+      return Math.abs(other.pt.x - pt.x) < 20 && Math.abs(other.pt.y - pt.y) < 20;
+    });
+    if (tooClose) { label.classList.add("lbl-hidden"); return; }
+
+    // Pin is well-separated: hide only if another pin sits inside this label's
+    // screen territory (roughly 150px wide, 26px tall, to the right of the pin)
+    const blocked = pts.some(other => {
+      if (other.id === id) return false;
+      const dx = other.pt.x - pt.x;
+      const dy = Math.abs(other.pt.y - pt.y);
+      return dx > 8 && dx < 160 && dy < 26;
+    });
+    label.classList.toggle("lbl-hidden", blocked);
+  });
+}
+map.on("zoomend moveend", updatePinLabels);
+
+// Hide the hover popup immediately when the user starts zooming or dragging the map.
+// Without this the popup lingers at its old screen position until the 300ms timer fires.
+map.on("zoomstart dragstart", () => {
+  clearTimeout(_popupHideTimer);
+  clearTimeout(_hoverTimer);
+  hideMapPopup();
+});
+
+map.whenReady(() => { renderMarkers(); updatePinLabels(); });
+
+</script>
+</body>
+</html>
