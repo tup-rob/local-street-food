@@ -1,0 +1,3 @@
+# Proxy vendor photos through Netlify to bypass imgix hotlink protection.
+# The request originates from Netlify's servers so no Referer header is sent.
+/img-proxy/*  https://feast-it-web-prod.imgix.net/:splat  200

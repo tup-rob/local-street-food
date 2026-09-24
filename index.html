@@ -629,9 +629,17 @@ function photoUrl(url, w=320, h=320) {
   if (url.includes("res.cloudinary.com")) {
     return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
   }
-  if (url.includes("imgix.net") || url.includes("feast-it-web-prod")) {
+  // Route Togather/Feast-It imgix photos through Netlify proxy so the
+  // request originates from Netlify's servers (no Referer = no hotlink block).
+  // imgix resize/format params are added for efficiency.
+  if (url.includes("feast-it-web-prod.imgix.net")) {
+    const path = url.replace("https://feast-it-web-prod.imgix.net", "");
+    const sep  = path.includes('?') ? '&' : '?';
+    return `/img-proxy${path}${sep}w=${w}&h=${h}&fit=crop&auto=format&q=75`;
+  }
+  if (url.includes("imgix.net")) {
     const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}w=${w}&h=${h}&fit=crop&auto=format,compress&q=75`;
+    return `${url}${sep}w=${w}&h=${h}&fit=crop&auto=format&q=75`;
   }
   return url;
 }
