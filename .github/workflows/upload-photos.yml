@@ -1,0 +1,34 @@
+name: Upload vendor photos to Cloudinary
+
+on:
+  workflow_dispatch:  # manual trigger only
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install cloudinary requests
+
+      - name: Upload photos
+        env:
+          CLOUDINARY_CLOUD_NAME: fp8ebpl8
+          CLOUDINARY_API_KEY: "293669749293647"
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python .github/scripts/upload_photos.py
+
+      - name: Commit updated vendors.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add vendors.json
+          git diff --cached --quiet || git commit -m "Upload vendor photos to Cloudinary [skip ci]"
+          git push
