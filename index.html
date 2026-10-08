@@ -624,22 +624,21 @@ let galPage     = 0;
 // ════════════════════════
 //  PHOTO HELPER
 // ════════════════════════
+const CLOUDINARY_CLOUD = "fp8ebpl8";
+
 function photoUrl(url, w=320, h=320) {
   if (!url) return "";
+  // Already a Cloudinary upload URL — add transform params
   if (url.includes("res.cloudinary.com")) {
     return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
   }
-  // Route Togather/Feast-It imgix photos through Netlify proxy so the
-  // request originates from Netlify's servers (no Referer = no hotlink block).
-  // imgix resize/format params are added for efficiency.
-  if (url.includes("feast-it-web-prod.imgix.net")) {
-    const path = url.replace("https://feast-it-web-prod.imgix.net", "");
-    const sep  = path.includes('?') ? '&' : '?';
-    return `/img-proxy${path}${sep}w=${w}&h=${h}&fit=crop&auto=format&q=75`;
-  }
+  // imgix photos (Togather/Feast-It) — use Cloudinary fetch to proxy server-to-server.
+  // Cloudinary fetches from imgix with no Referer, caches the result on its CDN.
+  // Format: /image/fetch/{transforms}/{encoded_source_url}
   if (url.includes("imgix.net")) {
-    const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}w=${w}&h=${h}&fit=crop&auto=format&q=75`;
+    const transforms = `w_${w},h_${h},c_fill,g_auto,f_auto,q_auto`;
+    const encoded = encodeURIComponent(url);
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/image/fetch/${transforms}/${encoded}`;
   }
   return url;
 }
