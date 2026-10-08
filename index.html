@@ -636,7 +636,10 @@ function photoUrl(url, w=320, h=320) {
   // Cloudinary fetches from imgix with no Referer, caches the result on its CDN.
   // Format: /image/fetch/{transforms}/{encoded_source_url}
   if (url.includes("imgix.net")) {
-    const transforms = `w_${w},h_${h},c_fill,g_auto,f_auto,q_auto`;
+    // g_auto:food — AI crop focused on the food, not the van or background
+    // e_improve — auto colour/contrast boost
+    // f_auto,q_auto — serve WebP/AVIF at optimal compression
+    const transforms = `w_${w},h_${h},c_fill,g_auto:food,e_improve,f_auto,q_auto`;
     const encoded = encodeURIComponent(url);
     return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/image/fetch/${transforms}/${encoded}`;
   }
