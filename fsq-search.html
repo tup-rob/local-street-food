@@ -48,8 +48,9 @@
 <div class="box">
   <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:6px">Foursquare API Key</label>
   <div class="key-row">
-    <input type="password" id="apiKey" placeholder="Paste your Foursquare service API key…">
+    <input type="text" id="apiKey" placeholder="Paste your Foursquare service API key…" style="font-family:monospace">
     <button onclick="saveKey()">Save</button>
+    <button onclick="clearKey()" style="background:#6b7280">Clear</button>
   </div>
   <div id="keyStatus" style="font-size:0.8rem;color:#666"></div>
 </div>
@@ -106,11 +107,19 @@ let apiKey = '';
 
 function saveKey() {
   const k = document.getElementById('apiKey').value.trim();
-  if (!k) return;
+  if (!k) { alert('Key is empty — paste your key first.'); return; }
   apiKey = k;
   localStorage.setItem(LS_KEY, k);
-  document.getElementById('keyStatus').textContent = '✓ Key saved locally.';
+  document.getElementById('keyStatus').textContent = `✓ Saved: ${k.slice(0,6)}…${k.slice(-4)} (${k.length} chars)`;
   document.getElementById('startBtn').disabled = false;
+}
+
+function clearKey() {
+  localStorage.removeItem(LS_KEY);
+  apiKey = '';
+  document.getElementById('apiKey').value = '';
+  document.getElementById('keyStatus').textContent = 'Key cleared. Paste your new key above.';
+  document.getElementById('startBtn').disabled = true;
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -134,7 +143,7 @@ function load() {
   if (saved) {
     apiKey = saved;
     document.getElementById('apiKey').value = saved;
-    document.getElementById('keyStatus').textContent = '✓ Key loaded from previous session.';
+    document.getElementById('keyStatus').textContent = `✓ Loaded: ${saved.slice(0,6)}…${saved.slice(-4)} (${saved.length} chars)`;
     document.getElementById('startBtn').disabled = false;
   }
 }
