@@ -103,34 +103,45 @@ function classify(data) {
   const type = (data.type || '').toLowerCase();
   const addr = data.address || {};
   const hasHouseNumber = !!addr.house_number;
-  const road = (addr.road || '').toLowerCase();
 
+  // Any of these in cat OR type = almost certainly a home/office address
+  const badResidentialWords = ['house','residential','apartments','detached','terrace',
+    'semidetached_house','bungalow','dormitory','static_caravan','flat','maisonette'];
+  const badLanduse = ['residential','farmland','meadow','grass','forest','cemetery','allotments'];
+
+  // Good: recognised food/commercial amenity
   const goodCats = ['amenity','shop','tourism','leisure'];
-  const goodTypes = ['restaurant','fast_food','cafe','food_court','marketplace','market_place','market','food','bar','pub'];
-  const badTypes = ['house','residential','apartments','detached','terrace','semidetached_house','bungalow','dormitory','static_caravan'];
-  const badCats = ['landuse'];
-  const badLanduse = ['residential','farmland','meadow','grass','forest','cemetery'];
-
-  if (goodCats.includes(cat) && goodTypes.some(t => type.includes(t))) {
-    return { flag: 'green', reason: `${cat}=${type}` };
-  }
   if (goodCats.includes(cat)) {
     return { flag: 'green', reason: `${cat}=${type}` };
   }
-  if (cat === 'building' && badTypes.includes(type)) {
-    return { flag: 'red', reason: `building=${type}` + (hasHouseNumber ? ` (#${addr.house_number})` : '') };
+  // Good: commercial/industrial land use (kitchen units, market sites)
+  if (cat === 'landuse' && ['commercial','industrial','retail'].includes(type)) {
+    return { flag: 'green', reason: `landuse=${type}` };
   }
+
+  // Red: residential land use
   if (cat === 'landuse' && badLanduse.includes(type)) {
     return { flag: 'red', reason: `landuse=${type}` };
   }
+  // Red: any building or place type that screams "home"
+  if (badResidentialWords.includes(type)) {
+    return { flag: 'red', reason: `${cat}=${type}` + (hasHouseNumber ? ` (#${addr.house_number})` : '') };
+  }
+  // Red: generic building with a house number (numbered residential property)
   if (cat === 'building' && hasHouseNumber) {
-    return { flag: 'amber', reason: `building=${type}, house number present` };
+    return { flag: 'red', reason: `building with house number (#${addr.house_number})` };
   }
-  if (cat === 'place' && ['suburb','neighbourhood','quarter','village','town','city'].includes(type)) {
-    return { flag: 'amber', reason: `Only resolved to ${type} level — coordinates may be approximate` };
+  // Amber: only resolved to a broad place level — coordinates may be a postcode centroid
+  if (cat === 'place' && ['suburb','neighbourhood','quarter','village','town','city','postcode'].includes(type)) {
+    return { flag: 'amber', reason: `Resolved to ${type} level only — coordinates may be approximate` };
   }
+  // Amber: street level — could be street trading or just an approximate address
   if (cat === 'highway') {
-    return { flag: 'amber', reason: `highway=${type} — street-level only, could be street trading` };
+    return { flag: 'amber', reason: `highway=${type} — street-level, could be street trading or approximate` };
+  }
+  // Amber: any other building without a house number — could be commercial unit
+  if (cat === 'building') {
+    return { flag: 'amber', reason: `building=${type} — check if commercial or residential` };
   }
   return { flag: 'amber', reason: `${cat}=${type}` };
 }
