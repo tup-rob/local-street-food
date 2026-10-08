@@ -158,10 +158,14 @@ async function fsqSearch(name, city, lat, lng) {
     ll: `${lat},${lng}`,
     radius: 50000, // 50km radius
     limit: 5,
-    fields: 'name,geocodes,categories,location'
+    fields: 'name,latitude,longitude,categories,location'
   });
-  const r = await fetch(`https://api.foursquare.com/v3/places/search?${params}`, {
-    headers: { Authorization: apiKey, Accept: 'application/json' }
+  const r = await fetch(`https://places-api.foursquare.com/places/search?${params}`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: 'application/json',
+      'X-Places-Api-Version': '2025-06-17'
+    }
   });
   if (!r.ok) {
     let body = '';
@@ -173,7 +177,7 @@ async function fsqSearch(name, city, lat, lng) {
   }
   const data = await r.json();
   // Pick result with best name similarity
-  const candidates = (data.results || []).map(p => ({
+  const candidates = (data.results || data.places || []).map(p => ({
     ...p,
     sim: nameSimilarity(name, p.name)
   })).filter(p => p.sim > 0.3).sort((a,b) => b.sim - a.sim);
@@ -204,8 +208,8 @@ async function start() {
       const match = await fsqSearch(v.name, v.city, v.lat, v.lng);
       let distKm = null, matchLat = null, matchLng = null, matchName = '', matchCat = '';
       if (match) {
-        matchLat = match.geocodes?.main?.latitude;
-        matchLng = match.geocodes?.main?.longitude;
+        matchLat = match.latitude ?? match.geocodes?.main?.latitude;
+        matchLng = match.longitude ?? match.geocodes?.main?.longitude;
         matchName = match.name || '';
         matchCat = match.categories?.[0]?.name || '';
         if (matchLat && matchLng) distKm = haversine(v.lat, v.lng, matchLat, matchLng);
