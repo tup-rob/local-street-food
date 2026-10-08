@@ -160,11 +160,10 @@ async function fsqSearch(name, city, lat, lng) {
     limit: 5,
     fields: 'name,latitude,longitude,categories,location'
   });
-  const r = await fetch(`https://places-api.foursquare.com/places/search?${params}`, {
+  const r = await fetch(`/.netlify/functions/fsq-proxy?${params}`, {
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: 'application/json',
-      'X-Places-Api-Version': '2025-06-17'
+      'X-FSQ-Key': apiKey,
+      Accept: 'application/json'
     }
   });
   if (!r.ok) {
