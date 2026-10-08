@@ -87,9 +87,23 @@ let results = {};
 let running = false;
 let abortFlag = false;
 
-// Load saved progress
+// Load saved progress and re-run classification on everything (picks up logic updates)
 function loadProgress() {
   try { results = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(e) { results = {}; }
+  // Re-classify all stored results using current logic
+  let changed = false;
+  for (const slug of Object.keys(results)) {
+    const r = results[slug];
+    if (r.cat !== undefined) {
+      const { flag, reason } = classify({ category: r.cat, type: r.type, address: r.address || {} });
+      if (flag !== r.flag || reason !== r.reason) {
+        r.flag = flag;
+        r.reason = reason;
+        changed = true;
+      }
+    }
+  }
+  if (changed) saveProgress();
 }
 
 function saveProgress() {
@@ -111,7 +125,12 @@ function classify(data) {
 
   // Good: recognised food/commercial amenity
   const goodCats = ['amenity','shop','tourism','leisure'];
+  const goodTypes = ['restaurant','fast_food','cafe','food_court','marketplace','market','bar','pub','food','takeaway','catering'];
   if (goodCats.includes(cat)) {
+    return { flag: 'green', reason: `${cat}=${type}` };
+  }
+  // Good: food-type value even if category is building (OSM inconsistency)
+  if (goodTypes.some(t => type.includes(t))) {
     return { flag: 'green', reason: `${cat}=${type}` };
   }
   // Good: commercial/industrial land use (kitchen units, market sites)
