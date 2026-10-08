@@ -630,7 +630,7 @@ function photoUrl(url, w=320, h=320) {
   if (!url) return "";
   // Already a Cloudinary upload URL — add transform params
   if (url.includes("res.cloudinary.com")) {
-    return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto/`);
+    return url.replace("/upload/", `/upload/w_${w},h_${h},c_fill,g_auto,f_auto,q_auto/`);
   }
   // imgix photos (Togather/Feast-It) — use Cloudinary fetch to proxy server-to-server.
   // Cloudinary fetches from imgix with no Referer, caches the result on its CDN.
@@ -640,7 +640,7 @@ function photoUrl(url, w=320, h=320) {
     const cfUrl = url.replace("feast-it-web-prod.imgix.net", "d32nt98g3gjlwu.cloudfront.net");
     // Route through Cloudinary fetch: food-focused AI crop, colour boost, WebP/AVIF
     // CloudFront is public so Cloudinary can fetch it with no Referer tricks needed
-    const transforms = `w_${w},h_${h},c_fill,g_auto:food,e_improve,f_auto,q_auto`;
+    const transforms = `w_${w},h_${h},c_fill,g_auto,f_auto,q_auto`;
     const encoded = encodeURIComponent(cfUrl);
     return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/image/fetch/${transforms}/${encoded}`;
   }
