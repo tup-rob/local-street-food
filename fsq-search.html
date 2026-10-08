@@ -176,6 +176,8 @@ async function fsqSearch(name, city, lat, lng) {
     throw new Error(`HTTP ${r.status}: ${body.slice(0,200)}`);
   }
   const data = await r.json();
+  // Debug: log first few responses to console
+  if (!window._fsqLogged) { console.log('FSQ response sample:', JSON.stringify(data).slice(0, 500)); window._fsqLogged = true; }
   // Pick result with best name similarity
   const candidates = (data.results || data.places || []).map(p => ({
     ...p,
