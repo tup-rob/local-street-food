@@ -142,6 +142,14 @@ function classify(data) {
   if (cat === 'landuse' && badLanduse.includes(type)) {
     return { flag: 'red', reason: `landuse=${type}` };
   }
+  // Red: office / professional services — clearly a business address not a trading pitch
+  if (cat === 'office') {
+    return { flag: 'red', reason: `office=${type} — business address` };
+  }
+  const officeTypes = ['lawyer','solicitor','accountant','estate_agent','insurance','financial','company','government','ngo'];
+  if (officeTypes.includes(type)) {
+    return { flag: 'red', reason: `${cat}=${type} — business/office address` };
+  }
   // Red: any building or place type that screams "home"
   if (badResidentialWords.includes(type)) {
     return { flag: 'red', reason: `${cat}=${type}` + (hasHouseNumber ? ` (#${addr.house_number})` : '') };
