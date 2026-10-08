@@ -37,6 +37,11 @@ def upload_url(url, public_id):
             overwrite=False,           # skip if already uploaded
             resource_type="image",
             timeout=30,
+            # Spoof headers so imgix thinks request comes from Togather's own site
+            headers=[
+                "Referer: https://feast-it.com",
+                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            ],
         )
         return result["secure_url"]
     except Exception as e:
