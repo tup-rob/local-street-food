@@ -127,8 +127,9 @@
     .vi-status { font-size: 14px; font-weight: 400; color: #555; }
     .vi-status.open         .vi-key { color: #16a34a; }
     .vi-status.closing-soon .vi-key { color: #d97706; }
-    .vi-status.upcoming     .vi-key { color: #dc2626; }
-    .vi-status.future       .vi-key { color: #dc2626; }
+    .vi-status.upcoming     .vi-key { color: #2563eb; }
+    .vi-status.event-soon   .vi-key { color: #7b5800; }
+    .vi-status.future       .vi-key { color: #888; }
 
     /* Gallery arrows — sit inside the photo mosaic, overlapping the left/right edges */
     .gal-arrow {
@@ -308,7 +309,20 @@
       background: #f7f7f7; color: #555;
     }
     #sheet-dietary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-    #sheet-sched { margin-bottom: 18px; font-size: 13px; color: #bbb; }
+    #sheet-sched { margin-bottom: 18px; }
+    .sh-sr { display: flex; gap: 10px; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
+    .sh-sr:last-child { border-bottom: none; }
+    .sh-day { min-width: 90px; color: #888; font-weight: 400; }
+    .sh-info { color: #444; }
+    .sh-sr.today .sh-day, .sh-sr.today .sh-info { color: #111; font-weight: 500; }
+    .sh-event-badge { display: inline-block; background: #fff3cd; color: #7b5800; border-radius: 4px; font-size: 10px; font-weight: 600; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+    #sched-toggle {
+      background: none; border: none; cursor: pointer; font-size: 13px; color: #888;
+      padding: 0; font-family: inherit; display: inline-flex; align-items: center; gap: 3px;
+    }
+    #sched-toggle svg { transition: transform 0.22s ease; flex-shrink: 0; }
+    #sched-toggle.open svg { transform: rotate(180deg); }
+    #sched-expanded { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
     .ig-link {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 13px; color: #555; text-decoration: none;
@@ -659,6 +673,121 @@ function photoUrl(url, w=320, h=320) {
 }
 
 // ════════════════════════
+//  SCHEDULE ENGINE
+// ════════════════════════
+const ALL_DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const TODAY = ALL_DAYS[new Date().getDay()];
+
+function parseMins(t) {
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
+  return isNaN(h) ? null : h * 60 + (m || 0);
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getDayLabel(day) {
+  const idx = ALL_DAYS.indexOf(day);
+  const todayIdx = ALL_DAYS.indexOf(TODAY);
+  if (idx === todayIdx) return "Today";
+  if (idx === (todayIdx + 1) % 7) return "Tomorrow";
+  return day;
+}
+
+function formatEventDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
+}
+
+function daysUntil(dateStr) {
+  const now = new Date(); now.setHours(0,0,0,0);
+  const then = new Date(dateStr + 'T00:00:00'); then.setHours(0,0,0,0);
+  return Math.round((then - now) / 86400000);
+}
+
+// Returns next recurring slot after today
+function nextRecurringSlot(schedule, fromDay) {
+  const idx = ALL_DAYS.indexOf(fromDay);
+  for (let i = 1; i <= 7; i++) {
+    const d = ALL_DAYS[(idx + i) % 7];
+    const e = schedule.find(s => s.days && s.days.includes(d));
+    if (e) return { day: d, entry: e };
+  }
+  return null;
+}
+
+// state: "open" | "closing-soon" | "upcoming" | "event-soon" | "future" | "none"
+function getVendorStatus(vendor) {
+  const sched = vendor.schedule || [];
+  if (!sched.length) return { state:'none', label:'', entry:null };
+
+  const now = new Date();
+  const curMins = now.getHours() * 60 + now.getMinutes();
+  const isoToday = todayISO();
+
+  // 1. Check for a date-specific event happening today
+  const todayEvent = sched.find(s => s.date === isoToday);
+  if (todayEvent) {
+    const parts = (todayEvent.hours || '').split(' - ');
+    const openMins = parseMins(parts[0]), closeMins = parseMins(parts[1]);
+    if (openMins !== null && closeMins !== null) {
+      if (curMins < openMins) return { state:'upcoming', label:`<span class="vi-key">Event today</span> · ${todayEvent.event ? todayEvent.event + ' · ' : ''}Opens ${parts[0]}`, entry:todayEvent };
+      if (curMins < closeMins) {
+        const minsLeft = closeMins - curMins;
+        if (minsLeft <= 30) return { state:'closing-soon', label:`<span class="vi-key">Closes in ${minsLeft} min${minsLeft===1?'':'s'}</span> · ${todayEvent.event||todayEvent.location}`, entry:todayEvent };
+        return { state:'open', label:`<span class="vi-key">Open</span> · ${todayEvent.event||todayEvent.location} · Closes ${parts[1]}`, entry:todayEvent };
+      }
+    }
+  }
+
+  // 2. Check recurring weekly schedule for today
+  const todayEntry = sched.find(s => s.days && s.days.includes(TODAY));
+  if (todayEntry) {
+    const parts = (todayEntry.hours || '').split(' - ');
+    const openMins = parseMins(parts[0]), closeMins = parseMins(parts[1]);
+    if (openMins !== null && closeMins !== null) {
+      if (curMins < openMins) return { state:'upcoming', label:`<span class="vi-key">Closed</span> · Opens today ${parts[0]}`, entry:todayEntry };
+      if (curMins < closeMins) {
+        const minsLeft = closeMins - curMins;
+        if (minsLeft <= 30) return { state:'closing-soon', label:`<span class="vi-key">Closes in ${minsLeft} min${minsLeft===1?'':'s'}</span>`, entry:todayEntry };
+        return { state:'open', label:`<span class="vi-key">Open</span> · Closes ${parts[1]}`, entry:todayEntry };
+      }
+    }
+  }
+
+  // 3. Find next upcoming event (date-specific, within 14 days)
+  const upcomingEvents = sched
+    .filter(s => s.date && s.date > isoToday)
+    .sort((a,b) => a.date.localeCompare(b.date));
+  if (upcomingEvents.length) {
+    const next = upcomingEvents[0];
+    const days = daysUntil(next.date);
+    if (days <= 14) {
+      const label = days === 1 ? 'tomorrow' : `in ${days} days`;
+      return { state:'event-soon', label:`<span class="vi-key">Next event</span> · ${next.event ? next.event + ' · ' : ''}${formatEventDate(next.date)}`, entry:next };
+    }
+  }
+
+  // 4. Find next recurring slot
+  const next = nextRecurringSlot(sched, TODAY);
+  if (next) {
+    const dl = getDayLabel(next.day).toLowerCase();
+    return { state:'future', label:`<span class="vi-key">Closed</span> · Opens ${dl} ${next.entry.hours.split(' - ')[0]}`, entry:next.entry };
+  }
+
+  // 5. Only future events, further out
+  if (upcomingEvents.length) {
+    const next = upcomingEvents[0];
+    return { state:'future', label:`<span class="vi-key">Next appearance</span> · ${next.event ? next.event + ' · ' : ''}${formatEventDate(next.date)}`, entry:next };
+  }
+
+  return { state:'none', label:'', entry:null };
+}
+
+// ════════════════════════
 //  MAP HOVER POPUP
 // ════════════════════════
 let _popupHideTimer = null;
@@ -685,14 +814,20 @@ function showMapPopup(vendor) {
   document.getElementById("popup-name").textContent = vendor.name;
   document.getElementById("popup-cuis").textContent = vendor.tagline || cuisineLabel(vendor.cuisine);
 
+  const status = getVendorStatus(vendor);
   const locEl = document.getElementById("popup-loc");
-  locEl.textContent   = vendor.city || "";
-  locEl.style.display = vendor.city ? "block" : "none";
+  const locText = (status.entry && status.entry.location) ? status.entry.location : (vendor.city || "");
+  locEl.textContent   = locText;
+  locEl.style.display = locText ? "block" : "none";
 
-  // No schedule status for Togather vendors
   const stEl = document.getElementById("popup-status");
-  stEl.innerHTML = "";
-  stEl.className = "";
+  if (status.state && status.state !== 'none') {
+    stEl.innerHTML = status.label;
+    stEl.className = `vi-status ${status.state}`;
+  } else {
+    stEl.innerHTML = "";
+    stEl.className = "";
+  }
 
   const igSvg  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>`;
   const webSvg = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
@@ -1084,18 +1219,70 @@ function openSheet(vendor) {
   // Tagline / cuisine type
   document.getElementById("sheet-cuisine").textContent = vendor.tagline || cuisineLabel(vendor.cuisine);
 
-  // Location: city
+  // Location + status from schedule engine
   const locPin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
-  document.getElementById("sheet-location").innerHTML = vendor.city
-    ? `${locPin}<span>${vendor.city}</span>`
+  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+  const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+  const sched = vendor.schedule || [];
+  const status = getVendorStatus(vendor);
+  const entry  = status.entry;
+
+  const locDisplay = (entry && entry.location) ? entry.location : (vendor.city || "");
+  document.getElementById("sheet-location").innerHTML = locDisplay
+    ? `${locPin}<span>${locDisplay}</span>`
     : "";
 
-  // Status — no schedule for these vendors
-  document.getElementById("sheet-status").innerHTML = "";
-  document.getElementById("sheet-status").className = "vi-status";
+  const statusEl = document.getElementById("sheet-status");
+  if (sched.length && status.state !== 'none') {
+    statusEl.className = `vi-status ${status.state}`;
+    statusEl.innerHTML = `${clockIcon}<span>${status.label} · <button id="sched-toggle" onclick="toggleSched()">Schedule ${chevron}</button></span>`;
+  } else if (!sched.length) {
+    statusEl.className = "vi-status";
+    statusEl.innerHTML = `${clockIcon}<span style="color:#bbb">Schedule coming soon</span>`;
+  } else {
+    statusEl.className = "vi-status";
+    statusEl.innerHTML = "";
+  }
 
-  // Schedule placeholder
-  document.getElementById("sheet-sched").textContent = "Market schedule coming soon";
+  // Build schedule rows
+  const schedEl = document.getElementById("sheet-sched");
+  if (sched.length) {
+    const isoToday = todayISO();
+    // Separate recurring and date-based entries
+    const recurring = sched.filter(s => s.days && s.days.length);
+    const events    = sched.filter(s => s.date).sort((a,b) => a.date.localeCompare(b.date));
+
+    let rows = '';
+    if (recurring.length) {
+      // Show all 7 days, starting from today
+      const todayIdx = ALL_DAYS.indexOf(TODAY);
+      const orderedDays = [...ALL_DAYS.slice(todayIdx), ...ALL_DAYS.slice(0, todayIdx)];
+      const uniqueLocs = new Set(recurring.map(e => e.location));
+      const isFixed = uniqueLocs.size === 1;
+      rows += orderedDays.map(d => {
+        const e = recurring.find(s => s.days.includes(d));
+        const isToday = d === TODAY;
+        if (!e) return `<div class="sh-sr${isToday?' today':''}"><span class="sh-day">${d}</span><span class="sh-info" style="color:#bbb">Closed</span></div>`;
+        const info = isFixed ? e.hours : `${e.hours} · ${e.location}`;
+        return `<div class="sh-sr${isToday?' today':''}"><span class="sh-day">${d}</span><span class="sh-info">${info}</span></div>`;
+      }).join('');
+    }
+    if (events.length) {
+      const futureEvents = events.filter(e => e.date >= isoToday);
+      if (futureEvents.length) {
+        rows += `<div class="sh-sr" style="margin-top:${recurring.length?'10px':'0'}"><span class="sh-day" style="color:#7b5800;font-weight:600">Upcoming</span><span class="sh-info"></span></div>`;
+        rows += futureEvents.map(e => {
+          const days = daysUntil(e.date);
+          const badge = days <= 7 ? `<span class="sh-event-badge">in ${days}d</span>` : '';
+          return `<div class="sh-sr"><span class="sh-day">${formatEventDate(e.date)}</span><span class="sh-info">${e.event ? e.event + ' · ' : ''}${e.hours}${badge}</span></div>`;
+        }).join('');
+      }
+    }
+    schedEl.innerHTML = `<div id="sched-expanded" style="max-height:0;overflow:hidden">${rows}</div>`;
+  } else {
+    schedEl.innerHTML = '';
+  }
 
   // Dietary tags
   const dietaryHtml = (vendor.dietary || []).slice(0, 8)
@@ -1151,6 +1338,15 @@ function closeSheet() {
   document.querySelectorAll(".fvm-pin").forEach(el => el.classList.remove("sel"));
   selectedVendor = null;
   _activeCardId = null;
+}
+
+function toggleSched() {
+  const exp = document.getElementById("sched-expanded");
+  const btn = document.getElementById("sched-toggle");
+  if (!exp || !btn) return;
+  const isOpen = btn.classList.contains("open");
+  exp.style.maxHeight = isOpen ? "0" : exp.scrollHeight + "px";
+  btn.classList.toggle("open", !isOpen);
 }
 
 // ════════════════════════
