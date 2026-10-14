@@ -30,7 +30,14 @@
       z-index: 1001;
     }
     .hd-left { display: flex; align-items: center; gap: 9px; }
-    .hd-right { display: flex; align-items: center; }
+    .hd-right { display: flex; align-items: center; gap: 8px; }
+    #confidence-toggle {
+      background: #fff8e1; color: #7b5800; border: 1px solid #f0c040; border-radius: 6px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+      font-weight: 500; font-family: inherit; transition: background 0.15s;
+    }
+    #confidence-toggle:hover { background: #fff3cd; }
+    #confidence-toggle.showing { background: #fdecea; color: #8b1a1a; border-color: #f5a0a0; }
 
     .logo-mark {
       width: 24px; height: 24px; display: flex; align-items: center;
@@ -496,6 +503,7 @@
   </div>
 
   <div class="hd-right">
+    <button id="confidence-toggle" onclick="toggleLowConfidence()" title="515 vendors have uncertain location data — toggle to show/hide them">📍 Hiding uncertain pins</button>
     <button id="add-btn" onclick="addYourListing()">+ Add your listing</button>
   </div>
 </div>
@@ -585,9 +593,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
 // ════════════════════════════════════════════════════════
-//  DATA — loaded async from vendors.json
+//  DATA — loaded async from vendors.json + location-scores.json
 // ════════════════════════════════════════════════════════
 let VENDORS = [];
+let ALL_VENDORS = [];       // full list including low-confidence
+let LOCATION_SCORES = {};   // slug → { confidence, signals }
+let showLowConfidence = false;
 let clusterGroup = null;
 
 // Cuisine sysName → human label
@@ -978,6 +989,11 @@ function makeLargePinIcon(vendor) {
 //  INIT MARKERS — called once after vendors.json loads
 // ════════════════════════
 function initMarkers() {
+  // Clear existing markers when re-initialising (e.g. confidence filter toggle)
+  if (clusterGroup) {
+    map.removeLayer(clusterGroup);
+    clusterGroup = null;
+  }
   clusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
     // Cluster aggressively at UK-overview zoom so no lone pins appear,
@@ -1396,21 +1412,53 @@ async function tryIPGeolocation() {
 // ════════════════════════
 async function loadVendors() {
   try {
-    const resp = await fetch('vendors.json');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    VENDORS = await resp.json();
+    const [vendorResp, scoresResp] = await Promise.all([
+      fetch('vendors.json'),
+      fetch('location-scores.json').catch(() => null)
+    ]);
+    if (!vendorResp.ok) throw new Error(`HTTP ${vendorResp.status}`);
+    ALL_VENDORS = await vendorResp.json();
+    if (scoresResp && scoresResp.ok) {
+      LOCATION_SCORES = await scoresResp.json();
+    }
   } catch (err) {
     console.error('Failed to load vendors.json:', err);
-    VENDORS = [];
+    ALL_VENDORS = [];
   }
+
+  applyConfidenceFilter();
 
   // Dismiss loading screen
   const overlay = document.getElementById('loading-overlay');
   overlay.classList.add('hidden');
   setTimeout(() => { overlay.style.display = 'none'; }, 350);
 
-  initMarkers();
   updateSheetHeight();
+}
+
+function applyConfidenceFilter() {
+  if (showLowConfidence) {
+    VENDORS = ALL_VENDORS;
+  } else {
+    VENDORS = ALL_VENDORS.filter(v => {
+      const score = LOCATION_SCORES[v.slug];
+      return !score || score.confidence !== 'low';
+    });
+  }
+  initMarkers();
+}
+
+function toggleLowConfidence() {
+  showLowConfidence = !showLowConfidence;
+  const btn = document.getElementById('confidence-toggle');
+  if (showLowConfidence) {
+    btn.textContent = '⚠️ Showing uncertain pins';
+    btn.classList.add('showing');
+  } else {
+    btn.textContent = '📍 Hiding uncertain pins';
+    btn.classList.remove('showing');
+  }
+  applyConfidenceFilter();
 }
 
 // IP geo and data fetch run in parallel; GPS only fires on locate button click
